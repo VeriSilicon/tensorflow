@@ -19,8 +19,8 @@ limitations under the License.
 #include "vsi_nn_graph.h"
 #include "vsi_nn_node.h"
 #include "vsi_nn_tensor_util.h"
+#include "vsi_nn_node_attr_template.h"
 #include "ovx_controller.h"
-#include "ovx_node_attr_template.h"
 #include "ovx_log.h"
 
 
@@ -148,7 +148,7 @@ uint32_t ovx_controller_AppendNode(
     OVXLOGE("Failed to append node %s(%d)", name, op_id);
     return ovxnode_id;
   }
-  ovx_apply_node_attr_template(node);
+  vsi_nn_apply_node_attr_template(node);
 
   return ovxnode_id;
 }
@@ -253,8 +253,13 @@ uint32_t ovx_controller_AppendTensor(
   }
   memset(&attr, 0, sizeof(vsi_nn_tensor_attr_t));
   memcpy(attr.size, shape, dim_num * sizeof(uint32_t));
-  attr.vtl = vx_true_e;
-  attr.is_const = vx_false_e;
+  if (NULL == data && NULL == shape) {
+    attr.vtl = vx_true_e;
+    attr.is_const = vx_false_e;
+  } else {
+    attr.vtl = vx_false_e;
+    attr.is_const = vx_true_e;
+  }
   //TODO: Data type
   attr.dtype.vx_type = VX_TYPE_FLOAT32;
   tensor_id = vsi_nn_AddTensor(s_graph, VSI_NN_TENSOR_ID_AUTO, &attr, (uint8_t*)data);
@@ -272,3 +277,4 @@ uint32_t ovx_controller_AppendTensor(
   }
   return tensor_id;
 }
+

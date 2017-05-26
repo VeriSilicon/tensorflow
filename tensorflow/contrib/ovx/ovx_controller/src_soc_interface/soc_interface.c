@@ -1,4 +1,4 @@
-/* Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ uint32_t soc_interface_AppendConstTensor(
     int dtype) {
   uint32_t id = (uint32_t)-1;
   OVXLOGI("Creat tensor const tensor %s", name);
-  bool ret = ovx_controller_AppendConstTensor(
+  id = ovx_controller_AppendConstTensor(
                         name, node_id, input_index,
                         shape, dim_num, data, data_length,
                         dtype);
