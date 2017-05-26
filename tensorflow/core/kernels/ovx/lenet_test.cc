@@ -57,7 +57,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
     ops::Conv2D(root.WithOpName("conv1"), input, conv1_weights_op, {1, 1, 1, 1}, "VALID");
 
   Tensor conv1_bias_data(DT_FLOAT, TensorShape({1, 1, 1, 20}));
-  test::FillIota<float>(&conv1_bias_data, 0.0f);
+  test::FillIota<float>(&conv1_bias_data, 1.0f);
 
   Output conv1_bias_op =
   ops::Const(root.WithOpName("conv1_bias_op"), Input::Initializer(conv1_bias_data));
@@ -81,7 +81,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
     ops::Conv2D(root.WithOpName("conv2"), conv1_relu_pool_op, conv2_weights_op, {1, 1, 1, 1}, "VALID");
 
   Tensor conv2_bias_data(DT_FLOAT, TensorShape({1, 1, 1, 50}));
-  test::FillIota<float>(&conv2_bias_data, 0.0f);
+  test::FillIota<float>(&conv2_bias_data, 1.0f);
 
   Output conv2_bias_op =
   ops::Const(root.WithOpName("conv2_bias_op"), Input::Initializer(conv2_bias_data));
@@ -105,7 +105,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Output fc1_op = ops::MatMul(root.WithOpName("fc1_mul"), fc1_input, fc1_weights_op);
 
   Tensor fc1_bias_data(DT_FLOAT, TensorShape({1, 500}));
-  test::FillIota<float>(&fc1_bias_data, 0.0f);
+  test::FillIota<float>(&fc1_bias_data, 1.0f);
 
   Output fc1_bias_op =
   ops::Const(root.WithOpName("fc1_bias_op"), Input::Initializer(fc1_bias_data));
@@ -117,16 +117,18 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
 
 
   //FC2
+  Output  fc2_input = ops::Reshape(root.WithOpName("fc2_reshape_op"),fc1_relu_op, {1, -1});
+
   Tensor fc2_wieght_data(DT_FLOAT, TensorShape({500, 10}));
   test::FillIota<float>(&fc2_wieght_data, 1.0f);
 
   Output fc2_weights_op =
   ops::Const(root.WithOpName("fc2_weights_op"), Input::Initializer(fc2_wieght_data));
 
-  Output fc2_op = ops::MatMul(root.WithOpName("fc2_mul"), fc1_relu_op, fc2_weights_op);
+  Output fc2_op = ops::MatMul(root.WithOpName("fc2_mul"), fc2_input, fc2_weights_op);
 
   Tensor fc2_bias_data(DT_FLOAT, TensorShape({1, 10}));
-  test::FillIota<float>(&fc2_bias_data, 0.0f);
+  test::FillIota<float>(&fc2_bias_data, 1.0f);
 
   Output fc2_bias_op =
   ops::Const(root.WithOpName("fc2_bias_op"), Input::Initializer(fc2_bias_data));
@@ -134,7 +136,9 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Output fc2_bias_add_op =
     ops::Add(root.WithOpName("fc2_bias_add_op"), fc2_op, fc2_bias_op);
 
-  Output fc2_prob_op = ops::Softmax(root.WithOpName("fc2_prob_op"), fc2_bias_add_op);
+  Output fc2_relu_op = ops::Relu(root.WithOpName("fc2_relu_op"), fc2_bias_add_op);
+
+  Output fc2_prob_op = ops::Softmax(root.WithOpName("fc2_prob_op"), fc2_relu_op);
 
 
   GraphDef graph_def;

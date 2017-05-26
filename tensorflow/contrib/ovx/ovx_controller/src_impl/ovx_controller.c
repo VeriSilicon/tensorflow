@@ -17,6 +17,7 @@ limitations under the License.
 #include <string.h>
 
 #include "vsi_nn_graph.h"
+#include "vsi_nn_math.h"
 #include "vsi_nn_node.h"
 #include "vsi_nn_tensor_util.h"
 #include "vsi_nn_node_attr_template.h"
@@ -40,19 +41,19 @@ static vsi_nn_context_t s_context = NULL;
 static vsi_nn_graph_t * s_graph = NULL;
 
 bool ovx_controller_ExecuteGraph() {
-  bool ret;
+  vx_status status;
   OVXLOGI("Execute graph.");
   if (NULL == s_graph) {
       return false;
   }
 
-  ret = vsi_nn_RunGraph(s_graph);
+  status = vsi_nn_RunGraph(s_graph);
 
-  if (!ret) {
+  if (VX_SUCCESS != status) {
     OVXLOGE("Execution failed");
   }
 
-  return ret;
+  return (VX_SUCCESS == status);
 }
 
 uint32_t ovx_controller_GetTargetGraphId() {
@@ -113,7 +114,8 @@ uint32_t ovx_controller_AppendConstTensor(
     if (VSI_NN_TENSOR_ID_NA == tensor_id) {
       OVXLOGE("Create const tensor %s fail.", name);
     }
-    node->input.tensors[port] = tensor_id;
+    //printf("new %d [%d]--> %d \n",node_id, new_port, tensor_id);
+    node->input.tensors[new_port] = tensor_id;
   }
   return tensor_id;
 }
@@ -139,6 +141,35 @@ uint32_t ovx_controller_AppendNode(
 
 bool ovx_controller_ConstructGraph() {
   vx_status status;
+//=============
+
+#if 1
+printf("[" );
+  for (int i = 0; i < s_graph->tensor_num; i ++) {
+printf("%d -- [", i);
+for(int j = 0; j < s_graph->tensors[i]->attr.dim_num; j ++) {
+	printf("%d,",s_graph->tensors[i]->attr.size[j]);
+}
+printf("]\n");
+}
+printf("]\n");
+  for (int i = 0; i < s_graph->node_num; i ++) {
+   if(NULL != s_graph->nodes[i]) {
+printf("%d = [", i);
+for(int j = 0; j < s_graph->nodes[i]->input.num; j ++)
+{
+printf("%d, ", s_graph->nodes[i]->input.tensors[j]);
+}
+printf("][");
+for(int j = 0; j < s_graph->nodes[i]->output.num; j ++)
+{
+printf("%d, ", s_graph->nodes[i]->output.tensors[j]);
+}
+printf("]\n");
+}
+   }
+#endif
+//================
   status = vsi_nn_SetupGraph(s_graph, true);
   if (VX_SUCCESS == status) {
     status = vsi_nn_VerifyGraph(s_graph);
@@ -182,7 +213,7 @@ bool ovx_controller_FillInputTensor(uint32_t tensor_id,
     status = vsi_nn_CopyDataToTensor(s_graph, tensor, (uint8_t*)buf);
   }
   if (VX_SUCCESS != status) {
-    OVXLOGE("Copy data(%lu) to tensor %d fail.", buf_size, tensor_id);
+    OVXLOGE("Copy data(%lu) to tensor %u fail.", buf_size, tensor_id);
   }
   return (VX_SUCCESS == status);
 }
@@ -232,31 +263,43 @@ uint32_t ovx_controller_AppendTensor(
         int dtype) {
   vsi_nn_tensor_id_t tensor_id;
   vsi_nn_tensor_attr_t attr;
-  if (VSI_NN_NODE_ID_NA == node_id) {
-      return VSI_NN_TENSOR_ID_NA;
-  }
   memset(&attr, 0, sizeof(vsi_nn_tensor_attr_t));
-  memcpy(attr.size, shape, dim_num * sizeof(uint32_t));
-  if (NULL == data && NULL == shape) {
+  attr.dtype.vx_type = VX_TYPE_FLOAT16;
+  if (NULL == shape || 0 == dim_num) {
+    OVXLOGI("Create virtual tensor for node(%u).", node_id);
     attr.vtl = vx_true_e;
     attr.is_const = vx_false_e;
+    attr.dim_num = VSI_NN_DIM_AUTO;
   } else {
     attr.vtl = vx_false_e;
-    attr.is_const = vx_true_e;
+    attr.dim_num = dim_num;
+    memcpy(attr.size, shape, dim_num * sizeof(uint32_t));
+    // TODO: Fix me
+    if (NULL != data && data_length > 0) {
+      // Const tensor
+      // For bias
+      if (1 == attr.size[0] && 1 == attr.size[2]) {
+        vsi_nn_SqueezeShape(attr.size, &attr.dim_num);
+        attr.dtype.vx_type = VX_TYPE_FLOAT32;
+      }
+    } else {
+      // Input Output
+      attr.dim_num --;
+      memmove(&attr.size[0], &attr.size[1], attr.dim_num * sizeof(uint32_t));
+    }
+  //printf("%d/len(%d), %d, %d, %d, %d\n", dim_num, data_length, shape[0], shape[1], shape[2], shape[3]);
+  //printf("==>%d, %d, %d, %d, %d\n", attr.dim_num, attr.size[0], attr.size[1], attr.size[2], attr.size[3]);
   }
   //TODO: Data type
-  attr.dtype.vx_type = VX_TYPE_FLOAT32;
   tensor_id = vsi_nn_AddTensor(s_graph, VSI_NN_TENSOR_ID_AUTO, &attr, (uint8_t*)data);
-  if (VSI_NN_TENSOR_ID_NA != tensor_id) {
+  if (VSI_NN_TENSOR_ID_NA == tensor_id) {
     OVXLOGE("Create tensor fail.");
-  } else {
-    if (VSI_NN_NODE_ID_NA != node_id) {
-      vsi_nn_node_t * node = vsi_nn_GetNode(s_graph, node_id);
-      if (!node) {
-        OVXLOGE("Missing node %u.", node_id);
-      } else {
-        node->output.tensors[port] = tensor_id;
-      }
+  } else if (VSI_NN_NODE_ID_NA != node_id) {
+    vsi_nn_node_t * node = vsi_nn_GetNode(s_graph, node_id);
+    if (!node) {
+      OVXLOGE("Missing node %u.", node_id);
+    } else {
+      node->output.tensors[port] = tensor_id;
     }
   }
   return tensor_id;
