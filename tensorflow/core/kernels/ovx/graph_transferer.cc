@@ -1134,12 +1134,11 @@ bool GraphTransferer::GraphNodeMerge(){
   int new_node_id = orig_graph_info.node_info_size() +
                                  orig_graph_info.const_node_info_size();
   // 2. Setup op nodes
-
+  //Ruler Convolution Relu Pool
   for (const GraphTransferInfo::NodeInfo& params :
        orig_graph_info.node_info()) {
     const int node_id = params.node_id();
     const int op_id = params.soc_op_id();
-    //Ruler Convolution Relu Pool
     if (op_id == (int)SupportedOpType::AVGPOOL_F ||
         op_id == (int)SupportedOpType::MAXPOOL_F) {
       int relu_id = -1;
@@ -1204,11 +1203,11 @@ bool GraphTransferer::GraphNodeMerge(){
       }
     }
   }
+  //Ruler Convolution Relu or Full Collect Relu
   for (const GraphTransferInfo::NodeInfo& params :
        orig_graph_info.node_info()) {
     const int node_id = params.node_id();
     const int op_id = params.soc_op_id();
-    //Ruler Convolution Relu or Full Collect Relu
     if(op_id == (int)SupportedOpType::RELU_F) {
       bool notProcessed = true;
       for(int i=0; i < removeOpID.size(); i++){
@@ -1223,9 +1222,12 @@ bool GraphTransferer::GraphNodeMerge(){
         int conv2d_id = -1;
         int bias_add_id = -1;
         int full_connect_id = -1;
+        int flatten_id = -1;
         bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD_F, &orig_graph_info);
         conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D_F, &orig_graph_info);
         full_connect_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::MATMUL_F, &orig_graph_info);
+        if (full_connect_id != -1)
+          flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
         //Ruler Convolution Relu
         if (conv2d_id != -1){
           GraphTransferInfo::NodeInfo *conv2d_ninfo = FindNodeInfo(conv2d_id, &orig_graph_info);
@@ -1268,17 +1270,22 @@ bool GraphTransferer::GraphNodeMerge(){
             MergeInputInfo(relu_id, &orig_graph_info, &conv_relu_node_input_info, conv2d_id);
           }
 
-          //Step4, create Node Output Info, copy from POOL node, and reset new node id.
+          //Step4, create Node Output Info, copy from Relu node, and reset new node id.
           GraphTransferInfo::NodeOutputInfo& conv_relu_node_output_info =
               *merge_graph_info.add_node_output_info();
           conv_relu_node_output_info.CopyFrom(*FindNodeOutputInfo(relu_id, &orig_graph_info));
           conv_relu_node_output_info.set_node_id(new_node_id);
 
         } else if (full_connect_id != -1) {
-          //Ruler Full Collect Relu
+          //Ruler Full Collect Relu [Flatten]
           GraphTransferInfo::NodeInfo *relu_ninfo = FindNodeInfo(relu_id, &orig_graph_info);
           GraphTransferInfo::NodeInfo *full_collect_ninfo = FindNodeInfo(full_connect_id, &orig_graph_info);
           GraphTransferInfo::NodeInfo *bias_add_ninfo = FindNodeInfo(bias_add_id, &orig_graph_info);
+          GraphTransferInfo::NodeInfo *flatten_ninfo = nullptr;
+          if (flatten_id != -1) {
+            flatten_ninfo = FindNodeInfo(flatten_id, &orig_graph_info);
+            removeOpID.push_back(flatten_id);
+          }
 
           //Step1, Create a new node.
           new_node_id += 2 /* offset for ids */;
@@ -1290,7 +1297,7 @@ bool GraphTransferer::GraphNodeMerge(){
           // Create a new output node
           GraphTransferInfo::NodeInfo& fullC_relu_node_info =
               *merge_graph_info.add_node_info();
-          fullC_relu_node_info.set_name(string("fullConnect")+std::to_string(new_node_id));
+          fullC_relu_node_info.set_name(string("fullConnectRelu")+std::to_string(new_node_id));
           fullC_relu_node_info.set_node_id(new_node_id);
           fullC_relu_node_info.set_type_name("FullConnectRelu");
           fullC_relu_node_info.set_soc_op_id(
@@ -1299,6 +1306,7 @@ bool GraphTransferer::GraphNodeMerge(){
 
           //Step2, set node input count, output count
           int input_count = full_collect_ninfo->input_count() + relu_ninfo->input_count() -1;
+          if (flatten_id != -1) input_count += flatten_ninfo->input_count() -1;
           if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
           int output_count = relu_ninfo->output_count();
           fullC_relu_node_info.set_input_count(input_count);
@@ -1308,7 +1316,10 @@ bool GraphTransferer::GraphNodeMerge(){
           GraphTransferInfo::NodeInputInfo& fullC_relu_node_input_info =
               *merge_graph_info.add_node_input_info();
           fullC_relu_node_input_info.set_node_id(new_node_id);
-          MergeInputInfo(full_connect_id, &orig_graph_info, &fullC_relu_node_input_info, -1);
+          if (flatten_id != -1) {
+            MergeInputInfo(flatten_id, &orig_graph_info, &fullC_relu_node_input_info, -1);
+          }
+          MergeInputInfo(full_connect_id, &orig_graph_info, &fullC_relu_node_input_info, flatten_id);
           if(bias_add_id != -1){
             MergeInputInfo(bias_add_id, &orig_graph_info, &fullC_relu_node_input_info, full_connect_id);
             MergeInputInfo(relu_id, &orig_graph_info, &fullC_relu_node_input_info, bias_add_id);
@@ -1316,12 +1327,86 @@ bool GraphTransferer::GraphNodeMerge(){
             MergeInputInfo(relu_id, &orig_graph_info, &fullC_relu_node_input_info, full_connect_id);
           }
 
-          //Step4, create Node Output Info, copy from POOL node, and reset new node id.
+          //Step4, create Node Output Info, copy from Relu node, and reset new node id.
           GraphTransferInfo::NodeOutputInfo& fullC_relu_node_output_info =
               *merge_graph_info.add_node_output_info();
           fullC_relu_node_output_info.CopyFrom(*FindNodeOutputInfo(relu_id, &orig_graph_info));
           fullC_relu_node_output_info.set_node_id(new_node_id);
 
+        }
+      }
+    }
+  }
+  //Ruler Matmul + Bias_Add -> FullConnect
+  //Ruler Matmul -> FullConnect
+  for (const GraphTransferInfo::NodeInfo& params :
+       orig_graph_info.node_info()) {
+    const int node_id = params.node_id();
+    const int op_id = params.soc_op_id();
+    if(op_id == (int)SupportedOpType::BIASADD_F) {
+      bool notProcessed = true;
+      for(int i=0; i < removeOpID.size(); i++){
+        if (node_id == removeOpID[i]){
+          notProcessed = false;
+          break;
+        }
+      }
+
+      if(notProcessed){
+        int bias_add_id = node_id;
+        int full_connect_id = -1;
+        int flatten_id = -1;
+        full_connect_id = FindInputOP(bias_add_id,(int)SupportedOpType::MATMUL_F, &orig_graph_info);
+        if (full_connect_id != -1)
+          flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
+
+        if (full_connect_id != -1) {
+          GraphTransferInfo::NodeInfo *full_collect_ninfo = FindNodeInfo(full_connect_id, &orig_graph_info);
+          GraphTransferInfo::NodeInfo *bias_add_ninfo = FindNodeInfo(bias_add_id, &orig_graph_info);
+          GraphTransferInfo::NodeInfo *flatten_ninfo = nullptr;
+          if (flatten_id != -1) {
+            flatten_ninfo = FindNodeInfo(flatten_id, &orig_graph_info);
+            removeOpID.push_back(flatten_id);
+          }
+          //Step1, Create a new node.
+          new_node_id += 2 /* offset for ids */;
+          mergedNodeIDMap[bias_add_id] = new_node_id;
+          removeOpID.push_back(full_connect_id);
+          removeOpID.push_back(bias_add_id);
+
+          // Create a new output node
+          GraphTransferInfo::NodeInfo& full_connect_node_info =
+              *merge_graph_info.add_node_info();
+          full_connect_node_info.set_name(string("fullConnect")+std::to_string(new_node_id));
+          full_connect_node_info.set_node_id(new_node_id);
+          full_connect_node_info.set_type_name("FullConnect");
+          full_connect_node_info.set_soc_op_id(
+              OvxOpsDefinitions::getInstance().GetOpIdFor("FullConnect"));
+          full_connect_node_info.set_padding_id(full_collect_ninfo->padding_id()); //TODO: need set share same padding so far. need split padding to a single node.
+
+          //Step2, set node input count, output count
+          int input_count = full_collect_ninfo->input_count();
+          if (flatten_id != -1) input_count += flatten_ninfo->input_count() -1;
+          if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
+          int output_count = bias_add_ninfo->output_count();
+          full_connect_node_info.set_input_count(input_count);
+          full_connect_node_info.set_output_count(output_count);
+
+          //Step3, create Node Input Info, copy input info to the new NodeInput Info, and remove
+          GraphTransferInfo::NodeInputInfo& full_connect_node_input_info =
+              *merge_graph_info.add_node_input_info();
+          full_connect_node_input_info.set_node_id(new_node_id);
+          if (flatten_id != -1) {
+            MergeInputInfo(flatten_id, &orig_graph_info, &full_connect_node_input_info, -1);
+          }
+          MergeInputInfo(full_connect_id, &orig_graph_info, &full_connect_node_input_info, flatten_id);
+          MergeInputInfo(bias_add_id, &orig_graph_info, &full_connect_node_input_info, full_connect_id);
+
+          //Step4, create Node Output Info, copy from Bias Add node, and reset new node id.
+          GraphTransferInfo::NodeOutputInfo& full_connect_node_output_info =
+              *merge_graph_info.add_node_output_info();
+          full_connect_node_output_info.CopyFrom(*FindNodeOutputInfo(bias_add_id, &orig_graph_info));
+          full_connect_node_output_info.set_node_id(new_node_id);
         }
       }
     }
