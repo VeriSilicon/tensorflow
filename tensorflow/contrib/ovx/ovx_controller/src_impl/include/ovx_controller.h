@@ -20,7 +20,7 @@ limitations under the License.
 #include <stdbool.h>
 #include <stdlib.h>
 
-//#include "ovx_nn.h"
+#include "vsi_nn_node.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -79,6 +79,10 @@ uint32_t ovx_controller_AppendTensor(uint32_t node_id, int port,
         uint32_t * shape, uint32_t dim_num,
         const uint8_t* const data, int data_length,
         int dtype);
+
+int ovx_controller_read_attr(vsi_nn_node_t* node,
+        int port, uint32_t * shape, uint32_t dim_num,
+        const uint8_t* const attr, int len);
 
 #ifdef __cplusplus
 }

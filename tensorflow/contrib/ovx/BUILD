@@ -33,6 +33,7 @@ cc_library(
     ],
     srcs = [
         "ovx_controller/src_impl/ovx_controller.c",
+        "ovx_controller/src_impl/ovx_controller_attr_reader.c",
         "ovx_controller/src_soc_interface/soc_interface.c",
     ],
     deps = [

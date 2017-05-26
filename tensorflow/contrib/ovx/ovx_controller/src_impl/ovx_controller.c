@@ -91,23 +91,6 @@ bool ovx_controller_DeInitOvx() {
   return true;
 }
 
-static bool _read_attr(vsi_nn_node_t* node,
-        const uint8_t* const attr, int len) {
-  return false;
-}
-
-static bool _parse_attrs(vsi_nn_node_t * node, int port,
-        const uint8_t* const data, int data_length) {
-  bool ret = false;
-  uint32_t input_num = 0;
-  vsi_nn_OpGetIoNum(node, &input_num, NULL);
-  if (input_num <= (uint32_t)port) {
-    _read_attr(node, data, data_length);
-    ret = true;
-  }
-  return ret;
-}
-
 // Append const tensor to the graph
 uint32_t ovx_controller_AppendConstTensor(
         const char* const name, uint32_t node_id, int port,
@@ -115,13 +98,14 @@ uint32_t ovx_controller_AppendConstTensor(
         const uint8_t* const data, uint64_t data_length, int data_type) {
   vsi_nn_tensor_id_t tensor_id = VSI_NN_TENSOR_ID_NA;
   vsi_nn_node_t * node = NULL;
-  bool is_attr = false;
+  int new_port;
   node = vsi_nn_GetNode(s_graph, node_id);
   if (NULL == node) {
       return tensor_id;
   }
-  is_attr = _parse_attrs(node, port, data, data_length);
-  if (!is_attr) {
+  new_port = ovx_controller_read_attr(node, port,
+          shape, dim_num, data, data_length);
+  if (new_port > 0) {
     tensor_id = ovx_controller_AppendTensor(
             VSI_NN_NODE_ID_NA, 0,
             shape, dim_num,
