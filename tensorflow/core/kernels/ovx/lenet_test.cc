@@ -39,6 +39,7 @@ Status RewriteQuantizedStrippedModelForOvx(
 namespace {
 
 TEST(ovxRewriteTransformLenetTest, BasicRun) {
+#if 1
   Scope root = tensorflow::Scope::NewRootScope();
 
   // Create a simple graph that calculates convolution,relu,pool.
@@ -48,7 +49,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
 
   //Conv1
   Tensor conv1_wieght_data(DT_FLOAT, TensorShape({5, 5, 1, 20}));
-  test::FillIota<float>(&conv1_wieght_data, 1.0f);
+  test::FillIota<float>(&conv1_wieght_data, 0.0f);
 
   Output conv1_weights_op =
   ops::Const(root.WithOpName("conv1_weights_op"), Input::Initializer(conv1_wieght_data));
@@ -57,7 +58,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
     ops::Conv2D(root.WithOpName("conv1"), input, conv1_weights_op, {1, 1, 1, 1}, "VALID");
 
   Tensor conv1_bias_data(DT_FLOAT, TensorShape({1, 1, 1, 20}));
-  test::FillIota<float>(&conv1_bias_data, 1.0f);
+  test::FillIota<float>(&conv1_bias_data, 0.0f);
 
   Output conv1_bias_op =
   ops::Const(root.WithOpName("conv1_bias_op"), Input::Initializer(conv1_bias_data));
@@ -72,7 +73,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
 
   //Conv2
   Tensor conv2_wieght_data(DT_FLOAT, TensorShape({5, 5, 20, 50}));
-  test::FillIota<float>(&conv1_wieght_data, 1.0f);
+  test::FillIota<float>(&conv1_wieght_data, 0.0f);
 
   Output conv2_weights_op =
   ops::Const(root.WithOpName("conv2_weights_op"), Input::Initializer(conv2_wieght_data));
@@ -81,7 +82,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
     ops::Conv2D(root.WithOpName("conv2"), conv1_relu_pool_op, conv2_weights_op, {1, 1, 1, 1}, "VALID");
 
   Tensor conv2_bias_data(DT_FLOAT, TensorShape({1, 1, 1, 50}));
-  test::FillIota<float>(&conv2_bias_data, 1.0f);
+  test::FillIota<float>(&conv2_bias_data, 0.0f);
 
   Output conv2_bias_op =
   ops::Const(root.WithOpName("conv2_bias_op"), Input::Initializer(conv2_bias_data));
@@ -97,7 +98,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   //FC1
   Output  fc1_input = ops::Reshape(root.WithOpName("fc1_reshape_op"),conv2_max_pool_op, {1, -1});
   Tensor fc1_wieght_data(DT_FLOAT, TensorShape({800, 500}));
-  test::FillIota<float>(&fc1_wieght_data, 1.0f);
+  test::FillIota<float>(&fc1_wieght_data, 0.0f);
 
   Output fc1_weights_op =
   ops::Const(root.WithOpName("fc1_weights_op"), Input::Initializer(fc1_wieght_data));
@@ -105,7 +106,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Output fc1_op = ops::MatMul(root.WithOpName("fc1_mul"), fc1_input, fc1_weights_op);
 
   Tensor fc1_bias_data(DT_FLOAT, TensorShape({1, 500}));
-  test::FillIota<float>(&fc1_bias_data, 1.0f);
+  test::FillIota<float>(&fc1_bias_data, 0.0f);
 
   Output fc1_bias_op =
   ops::Const(root.WithOpName("fc1_bias_op"), Input::Initializer(fc1_bias_data));
@@ -120,7 +121,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Output  fc2_input = ops::Reshape(root.WithOpName("fc2_reshape_op"),fc1_relu_op, {1, -1});
 
   Tensor fc2_wieght_data(DT_FLOAT, TensorShape({500, 10}));
-  test::FillIota<float>(&fc2_wieght_data, 1.0f);
+  test::FillIota<float>(&fc2_wieght_data, 0.0f);
 
   Output fc2_weights_op =
   ops::Const(root.WithOpName("fc2_weights_op"), Input::Initializer(fc2_wieght_data));
@@ -128,7 +129,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Output fc2_op = ops::MatMul(root.WithOpName("fc2_mul"), fc2_input, fc2_weights_op);
 
   Tensor fc2_bias_data(DT_FLOAT, TensorShape({1, 10}));
-  test::FillIota<float>(&fc2_bias_data, 1.0f);
+  test::FillIota<float>(&fc2_bias_data, 0.0f);
 
   Output fc2_bias_op =
   ops::Const(root.WithOpName("fc2_bias_op"), Input::Initializer(fc2_bias_data));
@@ -144,6 +145,11 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   GraphDef graph_def;
   TF_ASSERT_OK(root.ToGraphDef(&graph_def));
 
+#else
+  GraphDef graph_def;
+  Status load_status = ReadBinaryProto(Env::Default(), "Lenet_OrigionGraph_weights.cook.pb", &graph_def);
+  ASSERT_TRUE(load_status.ok());
+#endif
 
   GraphDef fused_graph;
   TransformFuncContext context;
@@ -173,7 +179,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
 
   // 5.4 Setup input
   Tensor input_a(DT_FLOAT, {1, 28, 28, 1});
-  test::FillIota<float>(&input_a, 128.0f);
+  test::FillIota<float>(&input_a, 0.0f);
 
   std::vector<std::pair<string, Tensor>> inputs;
   inputs.emplace_back("input_image", input_a);
@@ -185,6 +191,10 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   // 5.6 Run inference with all node as output
   status = session->Run(run_options, inputs, outputs, {}, &output_tensors,
                         &run_metadata);
+  Tensor out = output_tensors[0];
+  //printf("output: ");
+  //printf("%d,\n",out.tensor_data()[0]);
+  //printf("%d, %x, %x, %x, %x\n",out.tensor_data.size(), out.tensor_data.data([0]).out.tensor_data.data([1]),out.tensor_data.data([2]),out.tensor_data.data([2]));
   ASSERT_TRUE(status.ok());
 
   // 5.7 Check output tensor value

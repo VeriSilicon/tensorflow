@@ -39,6 +39,7 @@ limitations under the License.
 
 static vsi_nn_context_t s_context = NULL;
 static vsi_nn_graph_t * s_graph = NULL;
+static uint8_t *        s_output = NULL;
 
 bool ovx_controller_ExecuteGraph() {
   vx_status status;
@@ -65,6 +66,11 @@ void ovx_controller_SetTargetGraphId(uint32_t graph_id) {
 }
 
 void ovx_controller_PrintGraph(uint32_t id) {
+  if (NULL == s_graph) {
+    return;
+  }
+
+  vsi_nn_PrintGraph(s_graph);
 }
 
 int ovx_controller_GetWrapperVersion() {
@@ -77,12 +83,17 @@ int ovx_controller_GetOvxBinaryVersion() {
 }
 
 bool ovx_controller_InitOvx() {
+  s_output = NULL;
   s_context = vsi_nn_CreateContext();
   return (NULL != s_context);
 }
 
 bool ovx_controller_DeInitOvx() {
   OVXLOGI("Finalize ovx");
+  if (NULL != s_output) {
+    free(s_output);
+    s_output = NULL;
+  }
   if (NULL != s_graph) {
     vsi_nn_ReleaseGraph(&s_graph);
   }
@@ -146,35 +157,6 @@ bool ovx_controller_ConstructGraph() {
   }
 
   vsi_nn_PrintGraph(s_graph);
-//=============
-#if 0
-  printf("[" );
-  for (int i = 0; i < s_graph->tensor_num; i ++) {
-    printf("%d -- [", i);
-    for(int j = 0; j < s_graph->tensors[i]->attr.dim_num; j ++) {
-	  printf("%d,",s_graph->tensors[i]->attr.size[j]);
-    }
-  printf("]\n");
-  }
-  printf("]\n");
-  for (int i = 0; i < s_graph->node_num; i ++) {
-   if(NULL != s_graph->nodes[i]) {
-     printf("%d = [", i);
-     for(int j = 0; j < s_graph->nodes[i]->input.num; j ++)
-     {
-     printf("%d, ", s_graph->nodes[i]->input.tensors[j]);
-     }
-     printf("][");
-     for(int j = 0; j < s_graph->nodes[i]->output.num; j ++)
-     {
-     printf("%d, ", s_graph->nodes[i]->output.tensors[j]);
-     }
-     printf("]\n");
-     }
-  }
-#endif
-//================
-
   status = vsi_nn_SetupGraph(s_graph, true);
   if (VX_SUCCESS == status) {
     status = vsi_nn_VerifyGraph(s_graph);
@@ -206,7 +188,10 @@ uint64_t ovx_controller_GetOutputNodeData(const char* node_name,
   OVXLOGI("Read output of %s.", node_name);
   //TODO: Find graph by name.
   //TODO: Find tensor by name.
-  *bytes = vsi_nn_CopyTensorToBuffer(s_graph, s_graph->tensors[0], *buf);
+  //*bytes = vsi_nn_CopyTensorToBuffer(s_graph, s_graph->tensors[1], *buf);
+  s_output = vsi_nn_ConvertTensorToData(s_graph, s_graph->tensors[1]);
+  *buf = s_output;
+  *bytes = 20;
   return *bytes;
 }
 

@@ -45,6 +45,8 @@ class OvxControlWrapper final : public IRemoteFusedGraphExecutor {
 
  private:
 
+  static GraphTransferInfo::NodeInfo* FindNodeInfo(
+      const string& node_name, GraphTransferInfo* graph_transfer_info);
   const RemoteFusedGraphExecuteInfo* execute_info_{};
   GraphTransferer graph_transferer_{};
 
