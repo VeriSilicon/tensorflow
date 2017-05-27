@@ -141,35 +141,40 @@ uint32_t ovx_controller_AppendNode(
 
 bool ovx_controller_ConstructGraph() {
   vx_status status;
-//=============
+  if (NULL == s_graph) {
+    return false;
+  }
 
-#if 1
-printf("[" );
+  vsi_nn_PrintGraph(s_graph);
+//=============
+#if 0
+  printf("[" );
   for (int i = 0; i < s_graph->tensor_num; i ++) {
-printf("%d -- [", i);
-for(int j = 0; j < s_graph->tensors[i]->attr.dim_num; j ++) {
-	printf("%d,",s_graph->tensors[i]->attr.size[j]);
-}
-printf("]\n");
-}
-printf("]\n");
+    printf("%d -- [", i);
+    for(int j = 0; j < s_graph->tensors[i]->attr.dim_num; j ++) {
+	  printf("%d,",s_graph->tensors[i]->attr.size[j]);
+    }
+  printf("]\n");
+  }
+  printf("]\n");
   for (int i = 0; i < s_graph->node_num; i ++) {
    if(NULL != s_graph->nodes[i]) {
-printf("%d = [", i);
-for(int j = 0; j < s_graph->nodes[i]->input.num; j ++)
-{
-printf("%d, ", s_graph->nodes[i]->input.tensors[j]);
-}
-printf("][");
-for(int j = 0; j < s_graph->nodes[i]->output.num; j ++)
-{
-printf("%d, ", s_graph->nodes[i]->output.tensors[j]);
-}
-printf("]\n");
-}
-   }
+     printf("%d = [", i);
+     for(int j = 0; j < s_graph->nodes[i]->input.num; j ++)
+     {
+     printf("%d, ", s_graph->nodes[i]->input.tensors[j]);
+     }
+     printf("][");
+     for(int j = 0; j < s_graph->nodes[i]->output.num; j ++)
+     {
+     printf("%d, ", s_graph->nodes[i]->output.tensors[j]);
+     }
+     printf("]\n");
+     }
+  }
 #endif
 //================
+
   status = vsi_nn_SetupGraph(s_graph, true);
   if (VX_SUCCESS == status) {
     status = vsi_nn_VerifyGraph(s_graph);

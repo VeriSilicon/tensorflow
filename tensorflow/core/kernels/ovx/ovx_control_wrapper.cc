@@ -79,9 +79,6 @@ bool OvxControlWrapper::SetupGraph() {
     gt.DumpVerificationStringOfNodeTransferParams();
   }
 
-  // Construct node input parameters
-#if 0
-#endif
 
   //TODO: Fix me
   graph_inputs.push_back(0x0c);
