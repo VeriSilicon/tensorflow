@@ -1116,6 +1116,9 @@ void GraphTransferer::DumpVerificationStringOfNodeTransferParams() const {
   for (const GraphTransferInfo::NodeInput& node_input :
      *node_input_info->mutable_node_input()) {
     GraphTransferInfo::NodeInfo* node_info = FindNodeInfo(node_input.node_id(), graph_transfer_info);
+    if (opID == -1 && node_info != nullptr) {
+      return node_info->node_id(); //Return first input node of this node
+    }
     if (node_info != nullptr && node_info->soc_op_id() == opID) {
         return node_info->node_id();
     }
@@ -1223,11 +1226,16 @@ bool GraphTransferer::GraphNodeMerge(){
         int bias_add_id = -1;
         int full_connect_id = -1;
         int flatten_id = -1;
+        int before_flatten_id = -1;
         bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD_F, &orig_graph_info);
         conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D_F, &orig_graph_info);
         full_connect_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::MATMUL_F, &orig_graph_info);
-        if (full_connect_id != -1)
+        if (full_connect_id != -1) {
           flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
+          if (flatten_id != -1) {
+            before_flatten_id = FindInputOP(flatten_id, -1, &orig_graph_info);
+          }
+        }
         //Ruler Convolution Relu
         if (conv2d_id != -1){
           GraphTransferInfo::NodeInfo *conv2d_ninfo = FindNodeInfo(conv2d_id, &orig_graph_info);
@@ -1249,7 +1257,7 @@ bool GraphTransferer::GraphNodeMerge(){
           conv_relu_node_info.set_type_name("ConvolutionRelu");
           conv_relu_node_info.set_soc_op_id(
               OvxOpsDefinitions::getInstance().GetOpIdFor("ConvolutionRelu"));
-          conv_relu_node_info.set_padding_id(conv2d_ninfo->padding_id()); //TODO: need set share same padding so far. need split padding to a single node.
+          conv_relu_node_info.set_padding_id(conv2d_ninfo->padding_id());
 
           //Step2, set node input count, output count
           int input_count = conv2d_ninfo->input_count() + relu_ninfo->input_count() - 1;
@@ -1302,7 +1310,7 @@ bool GraphTransferer::GraphNodeMerge(){
           fullC_relu_node_info.set_type_name("FullConnectRelu");
           fullC_relu_node_info.set_soc_op_id(
               OvxOpsDefinitions::getInstance().GetOpIdFor("FullConnectRelu"));
-          fullC_relu_node_info.set_padding_id(full_collect_ninfo->padding_id()); //TODO: need set share same padding so far. need split padding to a single node.
+          fullC_relu_node_info.set_padding_id(full_collect_ninfo->padding_id());
 
           //Step2, set node input count, output count
           int input_count = full_collect_ninfo->input_count() + relu_ninfo->input_count() -1;
@@ -1316,8 +1324,16 @@ bool GraphTransferer::GraphNodeMerge(){
           GraphTransferInfo::NodeInputInfo& fullC_relu_node_input_info =
               *merge_graph_info.add_node_input_info();
           fullC_relu_node_input_info.set_node_id(new_node_id);
-          if (flatten_id != -1) {
-            MergeInputInfo(flatten_id, &orig_graph_info, &fullC_relu_node_input_info, -1);
+          if (flatten_id != -1 && before_flatten_id != -1) {
+            //Skip re_shape op's shape parameter
+            GraphTransferInfo::NodeInputInfo* sourceInfo = FindNodeInputInfo(flatten_id, &orig_graph_info);
+            for (const GraphTransferInfo::NodeInput& nodeInput :
+                 *sourceInfo->mutable_node_input()) {
+              if (nodeInput.node_id() == before_flatten_id) {
+                GraphTransferInfo::NodeInput& ni = *fullC_relu_node_input_info.add_node_input();
+                ni = nodeInput;
+              }
+            }
           }
           MergeInputInfo(full_connect_id, &orig_graph_info, &fullC_relu_node_input_info, flatten_id);
           if(bias_add_id != -1){
@@ -1338,7 +1354,6 @@ bool GraphTransferer::GraphNodeMerge(){
     }
   }
   //Ruler Matmul + Bias_Add -> FullConnect
-  //Ruler Matmul -> FullConnect
   for (const GraphTransferInfo::NodeInfo& params :
        orig_graph_info.node_info()) {
     const int node_id = params.node_id();
@@ -1375,38 +1390,38 @@ bool GraphTransferer::GraphNodeMerge(){
           removeOpID.push_back(bias_add_id);
 
           // Create a new output node
-          GraphTransferInfo::NodeInfo& full_connect_node_info =
+          GraphTransferInfo::NodeInfo& full_connect_relu_node_info =
               *merge_graph_info.add_node_info();
-          full_connect_node_info.set_name(string("fullConnect")+std::to_string(new_node_id));
-          full_connect_node_info.set_node_id(new_node_id);
-          full_connect_node_info.set_type_name("FullConnect");
-          full_connect_node_info.set_soc_op_id(
-              OvxOpsDefinitions::getInstance().GetOpIdFor("FullConnect"));
-          full_connect_node_info.set_padding_id(full_collect_ninfo->padding_id()); //TODO: need set share same padding so far. need split padding to a single node.
+          full_connect_relu_node_info.set_name(string("fullConnectRelu")+std::to_string(new_node_id));
+          full_connect_relu_node_info.set_node_id(new_node_id);
+          full_connect_relu_node_info.set_type_name("FullConnectRelu");
+          full_connect_relu_node_info.set_soc_op_id(
+              OvxOpsDefinitions::getInstance().GetOpIdFor("FullConnectRelu"));
+          full_connect_relu_node_info.set_padding_id(full_collect_ninfo->padding_id());
 
           //Step2, set node input count, output count
           int input_count = full_collect_ninfo->input_count();
           if (flatten_id != -1) input_count += flatten_ninfo->input_count() -1;
           if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
           int output_count = bias_add_ninfo->output_count();
-          full_connect_node_info.set_input_count(input_count);
-          full_connect_node_info.set_output_count(output_count);
+          full_connect_relu_node_info.set_input_count(input_count);
+          full_connect_relu_node_info.set_output_count(output_count);
 
           //Step3, create Node Input Info, copy input info to the new NodeInput Info, and remove
-          GraphTransferInfo::NodeInputInfo& full_connect_node_input_info =
+          GraphTransferInfo::NodeInputInfo& full_connect_relu_node_input_info =
               *merge_graph_info.add_node_input_info();
-          full_connect_node_input_info.set_node_id(new_node_id);
+          full_connect_relu_node_input_info.set_node_id(new_node_id);
           if (flatten_id != -1) {
-            MergeInputInfo(flatten_id, &orig_graph_info, &full_connect_node_input_info, -1);
+            MergeInputInfo(flatten_id, &orig_graph_info, &full_connect_relu_node_input_info, -1);
           }
-          MergeInputInfo(full_connect_id, &orig_graph_info, &full_connect_node_input_info, flatten_id);
-          MergeInputInfo(bias_add_id, &orig_graph_info, &full_connect_node_input_info, full_connect_id);
+          MergeInputInfo(full_connect_id, &orig_graph_info, &full_connect_relu_node_input_info, flatten_id);
+          MergeInputInfo(bias_add_id, &orig_graph_info, &full_connect_relu_node_input_info, full_connect_id);
 
           //Step4, create Node Output Info, copy from Bias Add node, and reset new node id.
-          GraphTransferInfo::NodeOutputInfo& full_connect_node_output_info =
+          GraphTransferInfo::NodeOutputInfo& full_connect_relu_node_output_info =
               *merge_graph_info.add_node_output_info();
-          full_connect_node_output_info.CopyFrom(*FindNodeOutputInfo(bias_add_id, &orig_graph_info));
-          full_connect_node_output_info.set_node_id(new_node_id);
+          full_connect_relu_node_output_info.CopyFrom(*FindNodeOutputInfo(bias_add_id, &orig_graph_info));
+          full_connect_relu_node_output_info.set_node_id(new_node_id);
         }
       }
     }
