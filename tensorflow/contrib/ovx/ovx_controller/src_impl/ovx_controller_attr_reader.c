@@ -41,11 +41,9 @@ limitations under the License.
 #define TENSOR_CONV_RELU_POOL_BIAS      _hash_op_port(VSI_NN_OP_CONV_RELU_POOL, 3)
 
 #define TENSOR_FCL_WEIGHTS              _hash_op_port(VSI_NN_OP_FCL, 1)
-// Fix me:
-#define TENSOR_FCL_RELU_WEIGHTS         _hash_op_port(VSI_NN_OP_FCL_RELU, 2)
+#define TENSOR_FCL_RELU_WEIGHTS         _hash_op_port(VSI_NN_OP_FCL_RELU, 1)
 #define TENSOR_FCL_BIAS                 _hash_op_port(VSI_NN_OP_FCL, 2)
-// Fix me:
-#define TENSOR_FCL_RELU_BIAS            _hash_op_port(VSI_NN_OP_FCL_RELU, 3)
+#define TENSOR_FCL_RELU_BIAS            _hash_op_port(VSI_NN_OP_FCL_RELU, 2)
 
 int ovx_controller_read_attr(vsi_nn_node_t* node,
         int port, uint32_t * shape, uint32_t dim_num,

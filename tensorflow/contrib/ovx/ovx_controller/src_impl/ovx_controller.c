@@ -19,6 +19,7 @@ limitations under the License.
 #include "vsi_nn_graph.h"
 #include "vsi_nn_math.h"
 #include "vsi_nn_node.h"
+#include "vsi_nn_util.h"
 #include "vsi_nn_tensor_util.h"
 #include "vsi_nn_node_attr_template.h"
 #include "ovx_controller.h"
@@ -40,6 +41,20 @@ limitations under the License.
 static vsi_nn_context_t s_context = NULL;
 static vsi_nn_graph_t * s_graph = NULL;
 static uint8_t *        s_output = NULL;
+
+static void _data_fp32_to_fp16(
+        float * src, int16_t * dst, int count) {
+  for (int i = 0; i < count; i ++) {
+    dst[i] = vsi_nn_Fp32toFp16(src[i]);
+  }
+}
+
+static void _data_fp16_to_fp32(
+        int16_t * src, float * dst, int count) {
+  for (int i = 0; i < count; i ++) {
+    dst[i] = vsi_nn_Fp16toFp32(src[i]);
+  }
+}
 
 bool ovx_controller_ExecuteGraph() {
   vx_status status;
@@ -185,13 +200,30 @@ uint32_t ovx_controller_InstantiateGraph(
 uint64_t ovx_controller_GetOutputNodeData(const char* node_name,
         uint8_t** buf, uint64_t* bytes) {
 
+  int16_t* fp16_out;
+  uint64_t sz;
   OVXLOGI("Read output of %s.", node_name);
   //TODO: Find graph by name.
   //TODO: Find tensor by name.
   //*bytes = vsi_nn_CopyTensorToBuffer(s_graph, s_graph->tensors[1], *buf);
-  s_output = vsi_nn_ConvertTensorToData(s_graph, s_graph->tensors[1]);
-  *buf = s_output;
-  *bytes = 20;
+  fp16_out = (int16_t*)vsi_nn_ConvertTensorToData(s_graph, s_graph->tensors[1]);
+  if (NULL != s_output) {
+      free(s_output);
+      s_output = NULL;
+  }
+  if (NULL != fp16_out) {
+    sz = 10 * sizeof(float);
+    s_output = (uint8_t*)malloc(sz);
+    _data_fp16_to_fp32(fp16_out, (float*)s_output, sz / sizeof(float));
+    free(fp16_out);
+    *buf = s_output;
+    *bytes = sz;
+    //printf("%f, %f, %f, %f\n",
+    //        ((float*)s_output)[0],
+    //        ((float*)s_output)[1],
+    //        ((float*)s_output)[5],
+    //        ((float*)s_output)[9]);
+  }
   return *bytes;
 }
 
@@ -200,7 +232,12 @@ bool ovx_controller_FillInputTensor(uint32_t tensor_id,
   vx_status status = VX_FAILURE;
   vsi_nn_tensor_t * tensor = vsi_nn_GetTensor(s_graph, tensor_id);
   if (NULL != tensor) {
-    status = vsi_nn_CopyDataToTensor(s_graph, tensor, (uint8_t*)buf);
+    int16_t * fp16buf;
+    printf("Convert to fp16 ...\n ");
+    fp16buf = (int16_t*)malloc((buf_size / 4) * sizeof(uint16_t));
+    _data_fp32_to_fp16((float*)buf, fp16buf, (buf_size / 4));
+    status = vsi_nn_CopyDataToTensor(s_graph, tensor, (uint8_t*)fp16buf);
+    free(fp16buf);
   }
   if (VX_SUCCESS != status) {
     OVXLOGE("Copy data(%lu) to tensor %u fail.", buf_size, tensor_id);
@@ -253,6 +290,8 @@ uint32_t ovx_controller_AppendTensor(
         int dtype) {
   vsi_nn_tensor_id_t tensor_id;
   vsi_nn_tensor_attr_t attr;
+  int16_t* fp16buf = NULL;
+  uint8_t * input_buf = (uint8_t*)data;
   memset(&attr, 0, sizeof(vsi_nn_tensor_attr_t));
   attr.dtype.vx_type = VX_TYPE_FLOAT16;
   if (NULL == shape || 0 == dim_num) {
@@ -265,12 +304,18 @@ uint32_t ovx_controller_AppendTensor(
     attr.dim_num = dim_num;
     memcpy(attr.size, shape, dim_num * sizeof(uint32_t));
     // TODO: Fix me
-    if (NULL != data && data_length > 0) {
+    if (NULL != input_buf && data_length > 0) {
       // Const tensor
       // For bias
       if (1 == attr.size[0] && 1 == attr.size[2]) {
         vsi_nn_SqueezeShape(attr.size, &attr.dim_num);
         attr.dtype.vx_type = VX_TYPE_FLOAT32;
+      } else {
+        // TODO: workaround
+        printf("Convert to fp16 ...\n ");
+        fp16buf = (int16_t*)malloc((data_length / 4) * sizeof(uint16_t));
+        _data_fp32_to_fp16((float*)input_buf, fp16buf, (data_length / 4));
+        input_buf = (uint8_t*)fp16buf;
       }
     } else {
       // Input Output
@@ -281,7 +326,10 @@ uint32_t ovx_controller_AppendTensor(
   //printf("==>%d, %d, %d, %d, %d\n", attr.dim_num, attr.size[0], attr.size[1], attr.size[2], attr.size[3]);
   }
   //TODO: Data type
-  tensor_id = vsi_nn_AddTensor(s_graph, VSI_NN_TENSOR_ID_AUTO, &attr, (uint8_t*)data);
+  tensor_id = vsi_nn_AddTensor(s_graph, VSI_NN_TENSOR_ID_AUTO, &attr, input_buf);
+  if (NULL != fp16buf) {
+    free(fp16buf);
+  }
   if (VSI_NN_TENSOR_ID_NA == tensor_id) {
     OVXLOGE("Create tensor fail.");
   } else if (VSI_NN_NODE_ID_NA != node_id) {

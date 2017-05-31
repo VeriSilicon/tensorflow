@@ -279,7 +279,7 @@ bool OvxControlWrapper::ReadOutputNode(
   CHECK(outputs != nullptr);
   ByteArray output;
   soc_interface_ReadOutputNode(node_name.c_str(), &std::get<0>(output),
-                                    (long unsigned int*)&std::get<1>(output));
+                                    (uint64_t*)&std::get<1>(output));
   //std::get<2>(output) = DT_FLOAT;
   std::get<2>(output) = DT_BFLOAT16;
   outputs->emplace_back(output);
