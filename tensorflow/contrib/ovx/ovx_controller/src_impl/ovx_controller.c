@@ -295,11 +295,13 @@ uint32_t ovx_controller_AppendTensor(
   memset(&attr, 0, sizeof(vsi_nn_tensor_attr_t));
   attr.dtype.vx_type = VX_TYPE_FLOAT16;
   if (NULL == shape || 0 == dim_num) {
+    attr.dtype.fmt = VSI_NN_DIM_FMT_NCHW;
     OVXLOGI("Create virtual tensor for node(%u).", node_id);
     attr.vtl = vx_true_e;
     attr.is_const = vx_false_e;
     attr.dim_num = VSI_NN_DIM_AUTO;
   } else {
+    attr.dtype.fmt = VSI_NN_DIM_FMT_NHWC;
     attr.vtl = vx_false_e;
     attr.dim_num = dim_num;
     memcpy(attr.size, shape, dim_num * sizeof(uint32_t));

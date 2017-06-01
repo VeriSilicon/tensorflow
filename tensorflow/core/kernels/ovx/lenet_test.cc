@@ -39,9 +39,9 @@ Status RewriteQuantizedStrippedModelForOvx(
 
 namespace {
 
-TEST(ovxRewriteTransformLenetTest, BasicRun) {
-#if 1
+  TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Scope root = tensorflow::Scope::NewRootScope();
+#if 0
 
   // Create a simple graph that calculates convolution,relu,pool.
 
@@ -150,8 +150,27 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   GraphDef graph_def;
   Status load_status = ReadBinaryProto(Env::Default(), "Lenet_OrigionGraph_weights.cook.pb", &graph_def);
   ASSERT_TRUE(load_status.ok());
+//#else
+//  GraphDef graph_def;
+//  GraphDef fused_graph;
+//  auto input = ops::Placeholder(root.WithOpName("input"), DT_FLOAT);
+//  auto data1 = ops::Const(root.WithOpName("d1"), {{3.f, 2.f},{-1.f, 0.f}});
+//  //auto data2 = ops::Const(root.WithOpName("d2"), {{3.f, 1.f},{1.f, 2.f}});
+//  auto add = ops::Add(root.WithOpName("add"), data1, input);
+//
+//  TransformFuncContext context;
+//  context.input_names = {"input"};
+//  context.output_names = {"add"};
+//  context.params.insert(std::pair<string, std::vector<string>>(
+//      {"input_shape0", {string("2, 2")}}));
+//  context.params.insert(std::pair<string, std::vector<string>>(
+//      {"input_type0", {string("float")}}));
+//  TF_ASSERT_OK(root.ToGraphDef(&graph_def));
+//  TF_ASSERT_OK(
+//      RewriteQuantizedStrippedModelForOvx(graph_def, context, &fused_graph));
 #endif
 
+#if 1
   GraphDef fused_graph;
   TransformFuncContext context;
   context.input_names = {"input_image"};
@@ -162,6 +181,7 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
       {"input_type0", {string("float")}}));
   TF_ASSERT_OK(
       RewriteQuantizedStrippedModelForOvx(graph_def, context, &fused_graph));
+#endif
 
   WriteTextProto(Env::Default(), "/home/ubuser/Lenet_OrigionGraph.txt", graph_def);
   WriteTextProto(Env::Default(), "/home/ubuser/Lenet_RemoteFuseGraphHEXRewrite.txt", fused_graph);
@@ -204,10 +224,16 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   // 5.6 Run inference with all node as output
   status = session->Run(run_options, inputs, outputs, {}, &output_tensors,
                         &run_metadata);
+
+
   Tensor out = output_tensors[0];
-  //printf("output: ");
-  //printf("%d,\n",out.tensor_data()[0]);
-  //printf("%d, %x, %x, %x, %x\n",out.tensor_data.size(), out.tensor_data.data([0]).out.tensor_data.data([1]),out.tensor_data.data([2]),out.tensor_data.data([2]));
+  printf("output: ");
+  printf("%d,\n",out.tensor_data()[0]);
+  printf("%d, %f, %f, %f, %f\n",out.tensor_data().size(),
+          ((float*)out.tensor_data().data())[0],
+          ((float*)out.tensor_data().data())[1],
+          ((float*)out.tensor_data().data())[2],
+          ((float*)out.tensor_data().data())[3]);
   ASSERT_TRUE(status.ok());
 
   // 5.7 Check output tensor value
