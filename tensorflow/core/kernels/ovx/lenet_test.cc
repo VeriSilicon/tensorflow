@@ -225,12 +225,10 @@ namespace {
 
   Tensor out = output_tensors[0];
   printf("output: ");
-  printf("%d,\n",out.tensor_data()[0]);
-  printf("%d, %f, %f, %f, %f\n",out.tensor_data().size(),
-          ((float*)out.tensor_data().data())[0],
-          ((float*)out.tensor_data().data())[1],
-          ((float*)out.tensor_data().data())[2],
-          ((float*)out.tensor_data().data())[3]);
+  for (int i = 0; i < out.NumElements(); i ++) {
+    printf("%f, ", ((float*)out.tensor_data().data())[i]);
+  }
+  printf("\n");
   ASSERT_TRUE(status.ok());
 
   // 5.7 Check output tensor value

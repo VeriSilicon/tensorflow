@@ -218,11 +218,6 @@ uint64_t ovx_controller_GetOutputNodeData(const char* node_name,
     free(fp16_out);
     *buf = s_output;
     *bytes = sz;
-    //printf("%f, %f, %f, %f\n",
-    //        ((float*)s_output)[0],
-    //        ((float*)s_output)[1],
-    //        ((float*)s_output)[5],
-    //        ((float*)s_output)[9]);
   }
   return *bytes;
 }
@@ -233,7 +228,7 @@ bool ovx_controller_FillInputTensor(uint32_t tensor_id,
   vsi_nn_tensor_t * tensor = vsi_nn_GetTensor(s_graph, tensor_id);
   if (NULL != tensor) {
     int16_t * fp16buf;
-    printf("Convert to fp16 ...\n ");
+    //printf("Convert to fp16 ...\n ");
     fp16buf = (int16_t*)malloc((buf_size / 4) * sizeof(uint16_t));
     _data_fp32_to_fp16((float*)buf, fp16buf, (buf_size / 4));
     status = vsi_nn_CopyDataToTensor(s_graph, tensor, (uint8_t*)fp16buf);
@@ -314,7 +309,7 @@ uint32_t ovx_controller_AppendTensor(
         attr.dtype.vx_type = VX_TYPE_FLOAT32;
       } else {
         // TODO: workaround
-        printf("Convert to fp16 ...\n ");
+        //printf("Convert to fp16 ...\n ");
         fp16buf = (int16_t*)malloc((data_length / 4) * sizeof(uint16_t));
         _data_fp32_to_fp16((float*)input_buf, fp16buf, (data_length / 4));
         input_buf = (uint8_t*)fp16buf;
