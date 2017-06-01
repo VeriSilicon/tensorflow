@@ -27,6 +27,7 @@ limitations under the License.
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/tools/graph_transforms/transform_utils.h"
+#include <fstream>
 
 namespace tensorflow {
 namespace graph_transforms {
@@ -178,8 +179,20 @@ TEST(ovxRewriteTransformLenetTest, BasicRun) {
   RunMetadata run_metadata;
 
   // 5.4 Setup input
-  Tensor input_a(DT_FLOAT, {1, 28, 28, 1});
-  test::FillIota<float>(&input_a, 0.0f);
+  //Tensor input_a(DT_FLOAT, {1, 28, 28, 1});
+  //test::FillIota<float>(&input_a, 0.0f);
+
+  std::ifstream fin("0.raw", std::ios::binary);
+  char data[28*28];
+  fin.read(data, 28*28);
+  Allocator* allocator = cpu_allocator();
+  size_t count_to_allocate = 28*28;
+  float* data_pointer = allocator->Allocate<float>(count_to_allocate);
+  for(int i = 0; i < 28*28; i++) {
+    data_pointer[i] = (float) data[i];
+  }
+
+  Tensor input_a(allocator, DT_FLOAT, TensorShape({1, 28, 28, 1}));
 
   std::vector<std::pair<string, Tensor>> inputs;
   inputs.emplace_back("input_image", input_a);
