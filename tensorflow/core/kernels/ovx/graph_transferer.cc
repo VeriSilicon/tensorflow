@@ -1133,7 +1133,6 @@ bool GraphTransferer::GraphNodeMerge(){
   std::vector<int> removeOpID;
   std::map<int, int> mergedNodeIDMap;
   LOG(INFO)<<"Orig Graph";
-  LOG(INFO)<<orig_graph_info.SerializeAsString();
   int new_node_id = orig_graph_info.node_info_size() +
                                  orig_graph_info.const_node_info_size();
   // 2. Setup op nodes
@@ -1442,7 +1441,6 @@ bool GraphTransferer::GraphNodeMerge(){
   MergeGraphOutputNodeInfo(&orig_graph_info, &merge_graph_info);
 
   LOG(INFO)<<"Merge Graph";
-  LOG(INFO)<<merge_graph_info.SerializeAsString();
 
   graph_transfer_info_ = merge_graph_info;
   return true;

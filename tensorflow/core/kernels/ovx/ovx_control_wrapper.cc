@@ -105,7 +105,6 @@ bool OvxControlWrapper::SetupGraph() {
     ovxtensor_map.emplace(node_id, std::vector<uint32>());
   }
   tensor_count += graph_transfer_info.const_node_info_size();
-  tensor_count = 14;
 
   int node_count = graph_transfer_info.node_info_size() - graph_inputs.size();
   // Instantiate graph
