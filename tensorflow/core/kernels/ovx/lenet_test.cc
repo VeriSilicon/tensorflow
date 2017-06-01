@@ -203,16 +203,13 @@ namespace {
   //test::FillIota<float>(&input_a, 0.0f);
 
   std::ifstream fin("0.raw", std::ios::binary);
-  char data[28*28];
+  char data[28*28] = {-1};
   fin.read(data, 28*28);
-  Allocator* allocator = cpu_allocator();
-  size_t count_to_allocate = 28*28;
-  float* data_pointer = allocator->Allocate<float>(count_to_allocate);
-  for(int i = 0; i < 28*28; i++) {
-    data_pointer[i] = (float) data[i];
-  }
 
-  Tensor input_a(allocator, DT_FLOAT, TensorShape({1, 28, 28, 1}));
+  Tensor input_a(DT_FLOAT, TensorShape({1, 28, 28, 1}));
+  for(int i = 0; i < 28*28; i++) {
+    input_a.flat<float>().data()[i] = (float) data[i];
+  }
 
   std::vector<std::pair<string, Tensor>> inputs;
   inputs.emplace_back("input_image", input_a);
