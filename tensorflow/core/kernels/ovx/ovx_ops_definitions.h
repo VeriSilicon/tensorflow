@@ -48,6 +48,9 @@ enum class SupportedOpType {
   MIN_F_REF,
   MAX_F,
   MAX_F_REF,
+  LRN,
+  CONCAT,
+  IDENTITY,
   NOP,
   OP_CONST, /* OP_ is required to avoid compilation error on windows */
   CHECK,

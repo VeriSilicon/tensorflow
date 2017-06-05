@@ -139,6 +139,24 @@ tf_cc_test(
 )
 
 tf_cc_test(
+    name = "ovx_inception_test",
+    size = "small",
+    srcs = ["google_inception.cc"],
+    deps = [
+        ":ovx_rewriter_transform",
+        ":ovx_remote_fused_graph_executor_build",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//tensorflow/tools/graph_transforms:transform_utils",
+    ],
+)
+
+tf_cc_test(
     name = "ovx_rewriter_transform_test",
     size = "small",
     srcs = ["ovx_rewriter_transform_lenet_test.cc"],
