@@ -201,7 +201,7 @@ uint64_t ovx_controller_GetOutputNodeData(const char* node_name,
         uint8_t** buf, uint64_t* bytes) {
 
   int16_t* fp16_out;
-  uint64_t sz;
+  uint32_t sz;
   OVXLOGI("Read output of %s.", node_name);
   //TODO: Find graph by name.
   //TODO: Find tensor by name.
@@ -212,7 +212,7 @@ uint64_t ovx_controller_GetOutputNodeData(const char* node_name,
       s_output = NULL;
   }
   if (NULL != fp16_out) {
-    sz = 10 * sizeof(float);
+    sz = vsi_nn_GetElementNum(s_graph->tensors[1]) * sizeof(float);
     s_output = (uint8_t*)malloc(sz);
     _data_fp16_to_fp32(fp16_out, (float*)s_output, sz / sizeof(float));
     free(fp16_out);
