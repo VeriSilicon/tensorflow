@@ -58,18 +58,17 @@ bool OvxControlWrapper::Init(const RemoteFusedGraphExecuteInfo& info) {
 
 bool OvxControlWrapper::Finalize() { return soc_interface_Finalize(); }
 bool OvxControlWrapper::SetupGraph() {
+  bool ret;
   std::unordered_map<int, uint32> ovxnode_map;
   std::unordered_map<int, std::vector<std::tuple<int, int>>> input_ports_map;
   std::unordered_map<int, std::vector<uint32>> ovxtensor_map;
   std::vector<int> graph_inputs;
   std::vector<int> graph_outputs;
-  //std::unordered_map<int, std::vector<uint32>> output_tensor_map;
+  ret = true;
   // Copy graph transfer info to modify to adapt ovx nn library
   GraphTransferInfo& graph_transfer_info =
       graph_transferer_.GetMutableGraphTransferInfo();
 
- // TODO: Fix me
-#if 1
   for (const GraphTransferInfo::GraphInputNodeInfo& graph_input :
        graph_transfer_info.graph_input_node_info()) {
     GraphTransferInfo::NodeInfo* node = FindNodeInfo(
@@ -83,14 +82,12 @@ bool OvxControlWrapper::SetupGraph() {
             graph_output.name(), &graph_transfer_info);
     graph_outputs.push_back(node->node_id());
   }
-#endif
 
   if (DBG_DUMP_VERIFICATION_STRING) {
     GraphTransferer gt;
     gt.SetSerializedGraphTransferInfo(graph_transfer_info.SerializeAsString());
     gt.DumpVerificationStringOfNodeTransferParams();
   }
-
 
   //TODO: Fix me
   //graph_inputs.push_back(0x0c);
@@ -119,7 +116,7 @@ bool OvxControlWrapper::SetupGraph() {
     const int op_id = params.soc_op_id();
 
     //TODO: if not input
-    if (op_id != 24) {
+    if (op_id != 27) {
       const uint32 ovxnode_id = soc_interface_AppendNode(
                                params.name().c_str(), op_id);
       ovxnode_map.emplace(node_id, ovxnode_id);
@@ -127,9 +124,13 @@ bool OvxControlWrapper::SetupGraph() {
   }
 
   #define OVX_NODE_ID_NA   ((uint32)-1)
+  #define OVX_TENSOR_ID_NA   ((uint32)-1)
+  #define OVX_MAX_DIM_NUM    (4)
   // Init graph input tensor
   for (const int node_id : graph_inputs) {
     // TODO: Fix me
+    // Find node by id
+    // Get node shape
     uint32 shape[] = {1, 28, 28, 1};
     int dim_num = 4;
     int dtype = 0;
@@ -142,6 +143,8 @@ bool OvxControlWrapper::SetupGraph() {
   // Init graph output tensor
   for (const int node_id : graph_outputs) {
     // TODO: Fix me
+    // Find node by id
+    // Get node shape
     uint32 shape[] = {1, 1, 1, 10};
     int dim_num = 4;
     int dtype = 0;
@@ -167,13 +170,19 @@ bool OvxControlWrapper::SetupGraph() {
         continue;
     }
     const int count = output_info.max_byte_size_size();
+    const uint32 ovxnode_id = ovxnode_map[node_id];
     for (int i = 0; i < count; i++ ) {
       // TODO: Add shape and data type in output_info
-      const uint32 ovxnode_id = ovxnode_map[node_id];
       int dtype = 0;
       int auto_dim = 0;
-      uint32 tensor_id = soc_interface_AppendTensor(
+      uint32 tensor_id = OVX_TENSOR_ID_NA;
+      if (ovxnode_id != OVX_NODE_ID_NA) {
+        tensor_id = soc_interface_AppendTensor(
           ovxnode_id, i, nullptr, auto_dim, nullptr, 0, dtype);
+      }
+      if (OVX_TENSOR_ID_NA == tensor_id) {
+          ret = false;
+      }
       ovxtensor_map[node_id].push_back(tensor_id);
     }
   }
@@ -195,6 +204,9 @@ bool OvxControlWrapper::SetupGraph() {
       auto got = ovxtensor_map.find(input_id);
       if (got != ovxtensor_map.end()) {
         uint32 ovxnode_id = ovxnode_map[node_id];
+        if (OVX_NODE_ID_NA == ovxnode_id) {
+            continue;
+        }
         uint32 ovxtensor_id = got->second[i];
         soc_interface_SetNodeInput(ovxnode_id, ovxtensor_id, i);
       }
@@ -202,8 +214,6 @@ bool OvxControlWrapper::SetupGraph() {
   }
 
   // Init const tensor
-  #define OVX_TENSOR_ID_NA   ((uint32)-1)
-  #define OVX_MAX_DIM_NUM    (4)
   for (const GraphTransferInfo::ConstNodeInfo& tensor :
        graph_transfer_info.const_node_info()) {
     const int node_id = tensor.node_id();
@@ -233,9 +243,14 @@ bool OvxControlWrapper::SetupGraph() {
 
   LOG(INFO) << "Setup graph completed";
 
-  // construct graph
-  // Release resource
-  return soc_interface_ConstructGraph();
+  if (false == ret) {
+    LOG(INFO) << "Setup graph fail";
+    soc_interface_TeardownGraph();
+  } else {
+    // construct graph
+    ret = soc_interface_ConstructGraph();
+  }
+  return ret;
 
 }
 
