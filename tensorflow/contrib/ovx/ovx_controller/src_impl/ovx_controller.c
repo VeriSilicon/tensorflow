@@ -153,11 +153,11 @@ uint32_t ovx_controller_AppendNode(
   vsi_nn_node_id_t ovxnode_id = 0;
   vsi_nn_node_t * node = NULL;
 
-  OVXLOGI("Append node %s(%d).", name, op_id);
+  OVXLOGI("Append node %s(%x).", name, op_id);
 
   node = vsi_nn_AppendNode(s_graph, op_id, &ovxnode_id);
   if (NULL == node) {
-    OVXLOGE("Failed to append node %s(%d)", name, op_id);
+    OVXLOGE("Failed to append node %s(%x)", name, op_id);
     return ovxnode_id;
   }
   vsi_nn_apply_node_attr_template(node);
@@ -291,7 +291,7 @@ uint32_t ovx_controller_AppendTensor(
   attr.dtype.vx_type = VX_TYPE_FLOAT16;
   if (NULL == shape || 0 == dim_num) {
     attr.dtype.fmt = VSI_NN_DIM_FMT_NCHW;
-    OVXLOGI("Create virtual tensor for node(%u).", node_id);
+    OVXLOGI("Create virtual tensor for node(%x).", node_id);
     attr.vtl = vx_true_e;
     attr.is_const = vx_false_e;
     attr.dim_num = VSI_NN_DIM_AUTO;

@@ -31,6 +31,7 @@ limitations under the License.
 
 #define ATTR_CONV_RELU_POOL_KSIZE_POOL  _hash_op_port(VSI_NN_OP_CONV_RELU_POOL, 4)
 //#define ATTR_POOL_KSIZE                _hash_op_port(VSI_NN_OP_POOL, 1)
+#define ATTR_CONCAT_DIM                 _hash_op_port(VSI_NN_OP_CONCAT, 0)
 
 // Const tensor
 #define TENSOR_CONV_WEIGHTS             _hash_op_port(VSI_NN_OP_CONV2D, 1)
@@ -44,6 +45,8 @@ limitations under the License.
 #define TENSOR_FCL_RELU_WEIGHTS         _hash_op_port(VSI_NN_OP_FCL_RELU, 1)
 #define TENSOR_FCL_BIAS                 _hash_op_port(VSI_NN_OP_FCL, 2)
 #define TENSOR_FCL_RELU_BIAS            _hash_op_port(VSI_NN_OP_FCL_RELU, 2)
+
+const static uint32_t s_tf_dim[] = {0, 3, 1, 2};
 
 int ovx_controller_read_attr(vsi_nn_node_t* node,
         int port, uint32_t * shape, uint32_t dim_num,
@@ -68,6 +71,9 @@ int ovx_controller_read_attr(vsi_nn_node_t* node,
     case ATTR_CONV_RELU_POOL_KSIZE_POOL:
       node->nn_param.pool.ksize[0] = shape[1];
       node->nn_param.pool.ksize[1] = shape[2];
+      break;
+    case ATTR_CONCAT_DIM:
+      node->nn_param.concat.axis = s_tf_dim[((uint32_t *)attr)[0]];
       break;
 
     // Const tensor

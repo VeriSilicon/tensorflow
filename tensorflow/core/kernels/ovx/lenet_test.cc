@@ -148,7 +148,7 @@ namespace {
 
 #else
   GraphDef graph_def;
-  Status load_status = ReadBinaryProto(Env::Default(), "Lenet_o.pb", &graph_def);
+  Status load_status = ReadBinaryProto(Env::Default(), "Lenet_2.pb", &graph_def);
   ASSERT_TRUE(load_status.ok());
 //#else
 //  GraphDef graph_def;

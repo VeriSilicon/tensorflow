@@ -1141,16 +1141,16 @@ bool GraphTransferer::GraphNodeMerge(){
        orig_graph_info.node_info()) {
     const int node_id = params.node_id();
     const int op_id = params.soc_op_id();
-    if (op_id == (int)SupportedOpType::AVGPOOL_F ||
-        op_id == (int)SupportedOpType::MAXPOOL_F) {
+    if (op_id == (int)SupportedOpType::AVGPOOL ||
+        op_id == (int)SupportedOpType::MAXPOOL) {
       int relu_id = -1;
       int bias_add_id = -1;
       int conv2d_id = -1;
       int pool_id = node_id;
-      relu_id = FindInputOP(node_id, (int)SupportedOpType::RELU_F, &orig_graph_info);
+      relu_id = FindInputOP(node_id, (int)SupportedOpType::RELU, &orig_graph_info);
       if (relu_id != -1) {
-        bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD_F, &orig_graph_info);
-        conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D_F, &orig_graph_info);
+        bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD, &orig_graph_info);
+        conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D, &orig_graph_info);
       }
       //Found Merge OP
       if (conv2d_id != -1) {
@@ -1210,7 +1210,7 @@ bool GraphTransferer::GraphNodeMerge(){
        orig_graph_info.node_info()) {
     const int node_id = params.node_id();
     const int op_id = params.soc_op_id();
-    if(op_id == (int)SupportedOpType::RELU_F) {
+    if(op_id == (int)SupportedOpType::RELU) {
       bool notProcessed = true;
       for(int i=0; i < removeOpID.size(); i++){
         if (node_id == removeOpID[i]){
@@ -1226,9 +1226,9 @@ bool GraphTransferer::GraphNodeMerge(){
         int full_connect_id = -1;
         int flatten_id = -1;
         int before_flatten_id = -1;
-        bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD_F, &orig_graph_info);
-        conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D_F, &orig_graph_info);
-        full_connect_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::MATMUL_F, &orig_graph_info);
+        bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD, &orig_graph_info);
+        conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D, &orig_graph_info);
+        full_connect_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::MATMUL, &orig_graph_info);
         if (full_connect_id != -1) {
           flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
           if (flatten_id != -1) {
@@ -1357,7 +1357,7 @@ bool GraphTransferer::GraphNodeMerge(){
        orig_graph_info.node_info()) {
     const int node_id = params.node_id();
     const int op_id = params.soc_op_id();
-    if(op_id == (int)SupportedOpType::BIASADD_F) {
+    if(op_id == (int)SupportedOpType::BIASADD) {
       bool notProcessed = true;
       for(int i=0; i < removeOpID.size(); i++){
         if (node_id == removeOpID[i]){
@@ -1370,7 +1370,7 @@ bool GraphTransferer::GraphNodeMerge(){
         int bias_add_id = node_id;
         int full_connect_id = -1;
         int flatten_id = -1;
-        full_connect_id = FindInputOP(bias_add_id,(int)SupportedOpType::MATMUL_F, &orig_graph_info);
+        full_connect_id = FindInputOP(bias_add_id,(int)SupportedOpType::MATMUL, &orig_graph_info);
         if (full_connect_id != -1)
           flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
 

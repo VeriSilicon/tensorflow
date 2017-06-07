@@ -116,7 +116,7 @@ bool OvxControlWrapper::SetupGraph() {
     const int op_id = params.soc_op_id();
 
     //TODO: if not input
-    if (op_id != 27) {
+    if (op_id != 21) {
       const uint32 ovxnode_id = soc_interface_AppendNode(
                                params.name().c_str(), op_id);
       ovxnode_map.emplace(node_id, ovxnode_id);
@@ -171,6 +171,7 @@ bool OvxControlWrapper::SetupGraph() {
     }
     const int count = output_info.max_byte_size_size();
     const uint32 ovxnode_id = ovxnode_map[node_id];
+    //printf("Append %x\n",node_id);
     for (int i = 0; i < count; i++ ) {
       // TODO: Add shape and data type in output_info
       int dtype = 0;

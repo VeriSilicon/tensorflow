@@ -96,7 +96,7 @@ uint32_t soc_interface_AppendTensor(
         uint32_t node_id, int port, uint32_t * shape, uint32_t dim_num,
         const uint8_t* const data, int data_length,
         int dtype) {
-  OVXLOGI("Append tensor for node(%u, %d)", node_id, port);
+  OVXLOGI("Append tensor for node(%x, %d)", node_id, port);
   const uint32_t tensor_id = ovx_controller_AppendTensor(
           node_id, port, shape, dim_num, data, data_length, dtype);
   return tensor_id;

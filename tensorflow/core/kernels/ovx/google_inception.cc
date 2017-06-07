@@ -45,7 +45,7 @@ namespace {
   TEST(ovxGoogleInceptionTest, BasicRun) {
   Scope root = tensorflow::Scope::NewRootScope();
   GraphDef graph_def;
-  Status load_status = ReadBinaryProto(Env::Default(), "/mnt/shared/tensorflow_inception_graph.pb", &graph_def);
+  Status load_status = ReadBinaryProto(Env::Default(), "inception/tensorflow_inception_graph.pb", &graph_def);
   LOG(WARNING)<<load_status.error_message();
   ASSERT_TRUE(load_status.ok());
 
@@ -102,7 +102,7 @@ namespace {
   {
     //对PNG文件的解析
    // try to open file
-   FILE* file = fopen("/mnt/shared/X_Pic.png", "rb");
+   FILE* file = fopen("inception/X_pic.png", "rb");
    // unable to open
    if (file == 0) {
      printf("B0\n");
