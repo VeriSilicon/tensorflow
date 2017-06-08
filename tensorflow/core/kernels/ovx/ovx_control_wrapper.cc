@@ -59,6 +59,7 @@ bool OvxControlWrapper::Init(const RemoteFusedGraphExecuteInfo& info) {
 bool OvxControlWrapper::Finalize() { return soc_interface_Finalize(); }
 bool OvxControlWrapper::SetupGraph() {
   bool ret;
+
   std::unordered_map<int, uint32> ovxnode_map;
   std::unordered_map<int, std::vector<std::tuple<int, int>>> input_ports_map;
   std::unordered_map<int, std::vector<uint32>> ovxtensor_map;
@@ -68,6 +69,14 @@ bool OvxControlWrapper::SetupGraph() {
   // Copy graph transfer info to modify to adapt ovx nn library
   GraphTransferInfo& graph_transfer_info =
       graph_transferer_.GetMutableGraphTransferInfo();
+
+  if (DBG_DUMP_VERIFICATION_STRING) {
+    GraphTransferer gt;
+    gt.SetSerializedGraphTransferInfo(graph_transfer_info.SerializeAsString());
+    gt.DumpVerificationStringOfNodeTransferParams();
+  }
+
+  return false;
 
   for (const GraphTransferInfo::GraphInputNodeInfo& graph_input :
        graph_transfer_info.graph_input_node_info()) {
@@ -81,12 +90,6 @@ bool OvxControlWrapper::SetupGraph() {
     GraphTransferInfo::NodeInfo* node = FindNodeInfo(
             graph_output.name(), &graph_transfer_info);
     graph_outputs.push_back(node->node_id());
-  }
-
-  if (DBG_DUMP_VERIFICATION_STRING) {
-    GraphTransferer gt;
-    gt.SetSerializedGraphTransferInfo(graph_transfer_info.SerializeAsString());
-    gt.DumpVerificationStringOfNodeTransferParams();
   }
 
   //TODO: Fix me

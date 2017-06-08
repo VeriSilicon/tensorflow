@@ -11,8 +11,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-==============================================================================*/
-
+==============================================================================*/ 
 #ifndef THIRD_PARTY_TENSORFLOW_CORE_KERNELS_OVX_OVX_OPS_DEFINITIONS_H_
 #define THIRD_PARTY_TENSORFLOW_CORE_KERNELS_OVX_OVX_OPS_DEFINITIONS_H_
 
@@ -22,21 +21,33 @@ limitations under the License.
 
 namespace tensorflow {
 
+enum class OvxPoolType {
+  MAX,
+  AVG
+};
+
+enum class OvxPaddingType {
+  SAME,
+  VALID
+};
+
 // HVX internal supported ops names
 enum class SupportedOpType {
-  BIASADD,
+  ADD,
   CONV2D,
-  CONVOLUTION_RELUE,
-  CONVOLUTION_RELUE_POOL,
+  CONVOLUTION_RELU,
+  CONVOLUTION_RELU_POOL,
   FULLCONNECT,
-  FULLCONNECTRELU,
+  FULLCONNECT_RELU,
   SOFTMAX,
   LEAKY_RELU,
   POOL,
   LRN,
   CONCAT,
-  MATMUL,
+  NOP,
+
   RELU,
+  MATMUL,
 
   AVGPOOL,
   MAXPOOL,
@@ -49,14 +60,14 @@ enum class SupportedOpType {
 
   MIN,
   MAX,
-  IDENTITY,
-  NOP,
 
   OP_CONST, /* OP_ is required to avoid compilation error on windows */
   CHECK,
   VARIABLE,
   ASSIGN,
   SUPPORTED_OP_TYPE_COUNT,
+
+  NA = IGraphTransferOpsDefinitions::INVALID_OP_ID,
 };
 
 // OvxOpsDefinitions provides ops definitons supported in ovx library

@@ -41,7 +41,7 @@ namespace {
 
   TEST(ovxRewriteTransformLenetTest, BasicRun) {
   Scope root = tensorflow::Scope::NewRootScope();
-#if 0
+#if 1
 
   // Create a simple graph that calculates convolution,relu,pool.
 
@@ -199,22 +199,22 @@ namespace {
   RunMetadata run_metadata;
 
   // 5.4 Setup input
-  //Tensor input_a(DT_FLOAT, {1, 28, 28, 1});
-  //test::FillIota<float>(&input_a, 0.0f);
+  Tensor input_a(DT_FLOAT, {1, 28, 28, 1});
+  test::FillIota<float>(&input_a, 0.0f);
 
-  std::ifstream fin("2_1.raw", std::ios::binary);
-  char data[28*28] = {-1};
-  fin.read(data, 28*28);
+  //std::ifstream fin("2_1.raw", std::ios::binary);
+  //char data[28*28] = {-1};
+  //fin.read(data, 28*28);
 
-  Tensor input_a(DT_FLOAT, TensorShape({1, 28, 28, 1}));
-  for(int i = 0; i < 28*28; i++) {
-    input_a.flat<float>().data()[i] = (float) ((unsigned char)data[i]) / 256.f;
+  //Tensor input_a(DT_FLOAT, TensorShape({1, 28, 28, 1}));
+  //for(int i = 0; i < 28*28; i++) {
+  //  input_a.flat<float>().data()[i] = (float) ((unsigned char)data[i]) / 256.f;
 #if 0
     printf("%1.3f, ",input_a.flat<float>().data()[i]);
     //printf("%3d, ",data[i]);
     if((i + 1 ) % 28 == 0)printf("\n");
 #endif
-  }
+  //}
 
   std::vector<std::pair<string, Tensor>> inputs;
   inputs.emplace_back("input_image", input_a);

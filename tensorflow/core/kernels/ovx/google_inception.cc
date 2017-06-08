@@ -62,7 +62,8 @@ namespace {
       RewriteQuantizedStrippedModelForOvx(graph_def, context, &fused_graph));
 #endif
 
-  WriteTextProto(Env::Default(), "./GoogleInception_OrigionGraph.txt", graph_def);
+  //WriteTextProto(Env::Default(), "./GoogleInception_OrigionGraph.txt", graph_def);
+  std::cout << "Save prototxt" << std::endl;
   WriteTextProto(Env::Default(), "./GoogleInception_RemoteFuseGraph.txt", fused_graph);
 
   // 5.3 Setup session
@@ -152,7 +153,7 @@ namespace {
    int width =  info_ptr->width;
    int height = info_ptr->height;
    int color_type = info_ptr->color_type;
-   int bit_depth = info_ptr->pixel_depth;
+   //int bit_depth = info_ptr->pixel_depth;
    png_bytep* row_pointers = png_get_rows(png_ptr,info_ptr);
    int pos=0;
    if(color_type == PNG_COLOR_TYPE_GRAY)

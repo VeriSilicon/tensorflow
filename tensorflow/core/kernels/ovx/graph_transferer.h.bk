@@ -84,7 +84,8 @@ class GraphTransferer {
   void SetSerializedGraphTransferInfo(const string& serialized_proto);
 
   // Return parameters for graph transfer
-  const GraphTransferInfo& GetGraphTransferInfo() const; 
+  const GraphTransferInfo& GetGraphTransferInfo() const;
+
   // Return mutable GraphTransferInfo for graph transfer
   GraphTransferInfo& GetMutableGraphTransferInfo();
 
@@ -108,11 +109,12 @@ class GraphTransferer {
   Status RegisterNode(
       const IGraphTransferOpsDefinitions& ops_definitions,
       const ShapeRefiner& shape_refiner,
-      const Node& node,
+      const TensorShapeMap& output_tensor_map, const Node& node,
       const std::vector<std::pair<string, Tensor>>& input_node_info_list,
       const std::vector<string>& output_node_names);
 
-  void RegisterConstantNode(const Node& node);
+  void RegisterConstantNode(const ShapeRefiner& shape_refiner, const Node& node,
+                            const TensorShapeMap& output_tensor_map);
 
   int RegisterConstantShape(const std::vector<int>& shape);
 
@@ -125,12 +127,25 @@ class GraphTransferer {
                             const TensorShapeMap& output_tensor_map,
                             const ShapeRefiner& shape_refiner);
 
+  void RegisterNodeWithPaddingAndStrides(
+      const IGraphTransferOpsDefinitions& ops_definitions,
+      const ShapeRefiner& shape_refiner,
+      const TensorShapeMap& output_tensor_map, const Node& node);
+
   void RegisterInputNode(const IGraphTransferOpsDefinitions& ops_definitions,
                          const ShapeRefiner& shape_refiner,
+                         const TensorShapeMap& output_tensor_map,
                          const Node& node);
 
+  void RegisterFlattenNode(const IGraphTransferOpsDefinitions& ops_definitions,
+                           const ShapeRefiner& shape_refiner,
+                           const TensorShapeMap& output_tensor_map,
+                           const Node& node);
+
   void RegisterGenericNode(const IGraphTransferOpsDefinitions& ops_definitions,
-          const Node& node);
+                           const ShapeRefiner& shape_refiner,
+                           const TensorShapeMap& output_tensor_map,
+                           const Node& node);
 
   Status RegisterNodeIfAllInputsAreCached(
       const IGraphTransferOpsDefinitions& ops_definitions,
@@ -141,25 +156,28 @@ class GraphTransferer {
       const TensorShapeMap& output_tensor_map);
 
   void AppendNodeParams(const string& name, const int id, const string& type,
-                        const int type_id,
+                        const int type_id, const int padding,
                         const int inputs_size,
+                        const std::vector<int>& extra_inputs,
                         const int outputs_size);
 
-  void AppendNodeInputParams(
-            GraphTransferInfo::NodeInputInfo& node_input_info,
-            const int id, const Node& node);
+  void AppendNodeInputParams(const int id, const Node& node,
+                             const std::vector<int>& extra_inputs);
 
-  void AppendNodeOutputParams(const int id, const Node& node);
+  void AppendNodeOutputParams(const ShapeRefiner& shape_refiner,
+                              const TensorShapeMap& output_tensor_map,
+                              const int id, const Node& node);
 
   static std::array<int64, SHAPE_ARRAY_SIZE> BuildShapeArray(
       const shape_inference::ShapeHandle& shape_handle,
       shape_inference::InferenceContext* context);
 
   void AppendNodeParamsWithIoParams(
-      const Node& node, const string& name, const int id,
-      const string& type, const int type_id,
-      const int inputs_size,
-      const int outputs_size,
+      const ShapeRefiner& shape_refiner,
+      const TensorShapeMap& output_tensor_map, const Node& node,
+      const string& name, const int id, const string& type, const int type_id,
+      const int padding, const int inputs_size,
+      const std::vector<int>& extra_inputs, const int outputs_size,
       const bool append_input_params, const bool append_output_params);
 
   static std::array<int64, SHAPE_ARRAY_SIZE> ToTensorShapeArray(
@@ -195,29 +213,39 @@ class GraphTransferer {
 
   GraphTransferInfo graph_transfer_info_{};
 
+  static GraphTransferInfo::NodeInfo* FindNodeInfo(
+      const string& name, GraphTransferInfo* graph_transfer_info);
+  static void CopyNodeInfo(
+      GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti, std::vector<int> &except);
+  static void CopyNodeInputInfo(
+      GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti, std::vector<int> &except);
+  static void CopyNodeOutputInfo(
+      GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti, std::vector<int> &except);
+  static GraphTransferInfo::NodeInfo* FindNodeInfo(
+      const int node_id, GraphTransferInfo* graph_transfer_info);
+  static GraphTransferInfo::NodeInputInfo* FindNodeInputInfo(
+      const int32 node_id, GraphTransferInfo* graph_transfer_info);
+  static GraphTransferInfo::NodeOutputInfo* FindNodeOutputInfo(
+      const int32 node_id, GraphTransferInfo* graph_transfer_info);
+  static void MergeInputInfo(
+      const int32 node_id, GraphTransferInfo* graph_transfer_info, GraphTransferInfo::NodeInputInfo *targeInfo, const int32 excludeID);
+  static void MapOrigNodeId2NewNodeId(
+      GraphTransferInfo* graph_transfer_info, std::map<int, int>& id_map);
+  static void MergeConstNodeInfo(
+      GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti );
+  static int FindInputOP(
+      int nodeId, int opID, GraphTransferInfo* graph_transfer_info);
+  static void MergeGraphInputNodeInfo(
+          GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti );
+  static void MergeGraphOutputNodeInfo(
+          GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti );
+
   std::vector<const Node*> node_name_cache_list_{};
   std::unordered_map<string, int> node_name_to_id_cache_map_{};
-  std::unordered_map<string, int> const_param_node_cache_map_{};
 
   // strict check mode is true by default.  Disable this if the ops' shape
   // inferences are not implemented correctly.
   bool strict_check_mode_{true};
-
-  bool CheckAndRemoveNode(Graph* graph, Node* node);
-
-  void RemoveNode(Graph* graph, Node* node);
-
-  bool CheckMergeNodes(Node* node, string& key);
-
-  Node* MergeNodes(const string& key, Graph* graph,
-                    Node* node, std::vector<Node*>& nodes);
-
-  Node* CheckAndMergeNodes(Graph* graph, Node* node,
-                    std::unordered_set<Node*>& merged_nodes);
-
-  Node* TransformNodeIfNeed(Graph* graph, Node* node);
-
-  void CopyEdges(Graph* graph, Node* src, Node* dst);
 
   TF_DISALLOW_COPY_AND_ASSIGN(GraphTransferer);
 };

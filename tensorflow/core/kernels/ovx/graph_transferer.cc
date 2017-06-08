@@ -30,6 +30,75 @@ limitations under the License.
 
 namespace tensorflow {
 
+static void _TransMaxPool(Node* node);
+
+static void _TransAvgPool(Node* node);
+
+static void _MergeFullConnect(Graph* graph,
+        Node* node, std::vector<Node*>& nodes);
+
+static void _MergeFullConnectRelu(Graph* graph,
+        Node* node, std::vector<Node*>& nodes);
+
+static void _MergeConv(Graph* graph,
+        Node* node, std::vector<Node*>& nodes);
+
+static void _MergeConvRelu(Graph* graph,
+        Node* node, std::vector<Node*>& nodes);
+
+static void _MergeConvReluPool(Graph* graph,
+        Node* node, std::vector<Node*>& nodes);
+
+static void _RegLRN(GraphTransferInfo& info,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+static void _RegPool(GraphTransferInfo& info,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+static void _RegFullconnectRelu(GraphTransferInfo& info,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+static void _RegConv(GraphTransferInfo& info,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+static void _RegConvRelu(GraphTransferInfo& info,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+static void _RegConvReluPool(GraphTransferInfo& info,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+static Node* _GetInputNoneOpNode(Node* node, const string& op);
+
+static Node* _GetInputOpNode(Node* node, const string& op);
+
+static const string& _GetNodeOvxOp(const Node* node);
+
+static const AttrValue& _GetNodeAttr(const Node* node, const string& key);
+
+static void CopyInputEdges(Graph* graph, Node* src, Node* dst, bool remove);
+
+static GraphTransferInfo::ConstNodeInfo& _RegisterConstantShapeNode(
+       GraphTransferInfo& info, string& name,
+       const std::vector<int>& shape, const int new_id);
+
 constexpr bool DBG_DUMP_VERIFICATION_STRING = false;
 constexpr bool DBG_DUMP_PARAMS = false;
 
@@ -40,19 +109,630 @@ const char INPUTS_NODE_PREFIX[] = "inputs_for_";
 const char OUTPUTS_NODE_PREFIX[] = "outputs_for_";
 const char DATA_NODE_PREFIX[] = "data_for_op_";
 const char CONST_SHAPE_PREFIX[] = "const_shape_";
+const char CONST_PAD_PREFIX[] = "const_pad_";
+const char CONST_POOL_TYPE_PREFIX[] = "pool_type_";
+const char CONST_BIAS_PREFIX[] = "lrn_bias_";
+const char CONST_ALPHA_PREFIX[] = "lrn_alpha_";
+const char CONST_BETA_PREFIX[] = "lrn_beat_";
+const char CONST_DEPTH_RADIUS_PREFIX[] = "lrn_depth_radius_";
 const char PADDING_ATTR_NAME[] = "padding";
 const char STRIDES_ATTR_NAME[] = "strides";
 const char KSIZE_ATTR_NAME[] = "ksize";
+const char ALPHA_ATTR_NAME[] = "alpha";
+const char BETA_ATTR_NAME[] = "beta";
+const char BIAS_ATTR_NAME[] = "bias";
+const char DEPTH_RADIUS_ATTR_NAME[] = "depth_radius";
 const char NULL_OUTPUT_NAME[] = "NULL";
-const int PADDING_NA_ID = 0;  // VALID = 1, SAME = 2
 
+const char NOOP_NAME[] = "NoOp";
+const char CONST_OP_NAME[] = "Const";
+const char MATMUL_OP_NAME[] = "MatMul";
+const char RESHAPE_OP_NAME[] = "Reshape";
+const char INPUT_OP_NAME[] = "Input";
+const char KSIZE_ATTR[] = "ksize";
+const char PAD_ATTR[] = "padding";
+const char STRIDE_ATTR[] = "strides";
+
+const char OVX_OP_ATTR[] = "OvxOp";
+const char NUM_OUTPUTS_ATTR[] = "NumOutputs";
+const char NUM_INPUTS_ATTR[] = "NumInputs";
+const char HAS_RELU_ATTR[] = "HasRelu";
+const char POOL_TYPE_ATTR[] = "PoolType";
+const char CONV_PAD_ATTR[] = "ConvPad";
+const char CONV_STRIDE_ATTR[] = "ConvStride";
+const char POOL_PAD_ATTR[] = "PoolPad";
+const char POOL_STRIDE_ATTR[] = "PoolStride";
+const char POOL_KSIZE_ATTR[] = "PoolKsize";
+const int PADDING_NA_ID = 0;  // VALID = 1, SAME = 2
+const static std::unordered_set<string> REMOVE_OPS = {
+  "NoOp",
+  };
+typedef void (*_ops_trans_func)(Node*);
+typedef void (*_ops_merge_func)(Graph*, Node*, std::vector<Node*>&);
+typedef void (*_ops_reg_func)(GraphTransferInfo&,
+        GraphTransferInfo::NodeInputInfo& input_info,
+        std::unordered_map<string, int>& param_cache,
+        const Node*, const int id,
+        const int cached_nodes);
+
+const static std::unordered_map<string,
+      std::pair<string, _ops_trans_func>> TRANS_OPS = {
+  {"MaxPool", {"Pool", _TransMaxPool}},
+  {"AvgPool", {"Pool", _TransAvgPool}},
+  {"BiasAdd", {"Add", nullptr}},
+  {"Identity", {"NoOp", nullptr}},
+  {"Placeholder", {INPUT_OP_NAME, nullptr}},
+  };
+
+const static std::unordered_map<string,
+       std::pair<std::vector<string>, _ops_merge_func>> MERGE_OPS = {
+  {"FullConnect", {{"Add", "MatMul"}, _MergeFullConnect}},
+  {"FullConnectRelu", {{"Relu", "Add", "MatMul"}, _MergeFullConnectRelu}},
+  {"Convolution", {{"Add", "Conv2D"}, _MergeConv}},
+  {"ConvolutionRelu", {{"Relu", "Add", "Conv2D"}, _MergeConvRelu}},
+  {"ConvolutionReluPool", {{"Pool", "Relu", "Add", "Conv2D"}, _MergeConvReluPool}},
+  };
+
+const static std::unordered_map<string, _ops_reg_func> REG_OPS = {
+  {"LRN", _RegLRN},
+  {"Pool", _RegPool},
+  {"FullConnectRelu", _RegFullconnectRelu},
+  {"Convolution", _RegConv},
+  {"ConvolutionRelu", _RegConvRelu},
+  {"ConvolutionReluPool", _RegConvReluPool},
+  };
+
+template <typename T>
 // This is a temporary workaround to support android build
 // where std::string is not supported even with c++11 option.
-template <typename T>
 static string ToString(T val) {
   std::stringstream stream;
   stream << val;
   return stream.str();
+}
+
+static void _AddNodeInputInfo(
+        GraphTransferInfo::NodeInputInfo& input_info,
+        const int id, const int port) {
+  GraphTransferInfo::NodeInput& node_input = *input_info.add_node_input();
+  node_input.set_node_id(id);
+  node_input.set_output_port(port);
+}
+
+static string _ShapeToName(std::vector<int> shape) {
+  CHECK_EQ(shape.size(), 4);
+  string shape_name = CONST_SHAPE_PREFIX + ToString(shape.at(0)) + 'x' +
+                            ToString(shape.at(1)) + 'x' +
+                            ToString(shape.at(2)) + 'x' + ToString(shape.at(3));
+  return shape_name;
+}
+
+static GraphTransferInfo::ConstNodeInfo& _RegisterConstantShapeNode(
+       GraphTransferInfo& info, string& name,
+       const std::vector<int>& shape, const int new_id) {
+  CHECK_EQ(shape.size(), 4);
+  GraphTransferInfo::ConstNodeInfo& node = *info.add_const_node_info();
+  node.set_name(name);
+  node.set_node_id(new_id);
+  node.add_shape(static_cast<int64>(shape[0]));
+  node.add_shape(static_cast<int64>(shape[1]));
+  node.add_shape(static_cast<int64>(shape[2]));
+  node.add_shape(static_cast<int64>(shape[3]));
+  return node;
+}
+
+static void _RegConvReluPool(GraphTransferInfo& info,
+       GraphTransferInfo::NodeInputInfo& input_info,
+       std::unordered_map<string, int>& param_cache,
+       const Node* node, const int id,
+       const int cached_nodes) {
+  _RegPool(info, input_info, param_cache, node, id, cached_nodes);
+  _RegConvRelu(info, input_info, param_cache, node, id, cached_nodes);
+}
+
+static void _RegConvRelu(GraphTransferInfo& info,
+       GraphTransferInfo::NodeInputInfo& input_info,
+       std::unordered_map<string, int>& param_cache,
+       const Node* node, const int id,
+       const int cached_nodes) {
+  _RegConv(info, input_info, param_cache, node, id, cached_nodes);
+}
+
+static void _RegConv(GraphTransferInfo& info,
+       GraphTransferInfo::NodeInputInfo& input_info,
+       std::unordered_map<string, int>& param_cache,
+       const Node* node, const int id,
+       const int cached_nodes) {
+  int new_id = 0;
+  std::vector<int> shape;
+  // Stride
+  GetNodeAttr(node->def(), CONV_STRIDE_ATTR, &shape).IgnoreError();
+  string name = _ShapeToName(shape);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    _RegisterConstantShapeNode(info, name, shape, new_id);
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  shape.clear();
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // Pad
+  int pad = (int)_GetNodeAttr(node, CONV_PAD_ATTR).i();
+  name = CONST_PAD_PREFIX + ToString(pad);
+  if (param_cache.count(name) == 0) {
+    shape = {1, 1, 1, 1};
+    new_id = cached_nodes + param_cache.size();
+    auto pad_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    pad_node.set_data(&pad, sizeof(int));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+}
+
+static void _RegPool(GraphTransferInfo& info,
+       GraphTransferInfo::NodeInputInfo& input_info,
+       std::unordered_map<string, int>& param_cache,
+       const Node* node, const int id,
+       const int cached_nodes) {
+  int new_id = 0;
+  std::vector<int> shape;
+  // Stride
+  GetNodeAttr(node->def(), POOL_STRIDE_ATTR, &shape).IgnoreError();
+  string name = _ShapeToName(shape);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    _RegisterConstantShapeNode(info, name, shape, new_id);
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  shape.clear();
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // ksize
+  GetNodeAttr(node->def(), POOL_KSIZE_ATTR, &shape).IgnoreError();
+  name = _ShapeToName(shape);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    _RegisterConstantShapeNode(info, name, shape, new_id);
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  shape.clear();
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // Pad
+  int pad = (int)_GetNodeAttr(node, POOL_PAD_ATTR).i();
+  name = CONST_PAD_PREFIX + ToString(pad);
+  if (param_cache.count(name) == 0) {
+    shape = {1, 1, 1, 1};
+    new_id = cached_nodes + param_cache.size();
+    auto pad_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    pad_node.set_data(&pad, sizeof(int));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // PoolType
+  int ptype = (int)_GetNodeAttr(node, POOL_TYPE_ATTR).i();
+  name = CONST_POOL_TYPE_PREFIX + ToString(ptype);
+  if (param_cache.count(name) == 0) {
+    shape = {1, 1, 1, 1};
+    new_id = cached_nodes + param_cache.size();
+    auto pad_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    pad_node.set_data(&ptype, sizeof(int));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+}
+
+static void _RegLRN(GraphTransferInfo& info,
+       GraphTransferInfo::NodeInputInfo& input_info,
+       std::unordered_map<string, int>& param_cache,
+       const Node* node, const int id,
+       const int cached_nodes) {
+  int new_id = 0;
+  std::vector<int> shape = {1, 1, 1, 1};
+  string name;
+  // Alpha
+  float fdata = (float)_GetNodeAttr(node, ALPHA_ATTR_NAME).f();
+  name = CONST_ALPHA_PREFIX + ToString(fdata);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    new_node.set_data(&fdata, sizeof(float));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // Beta
+  fdata = (float)_GetNodeAttr(node, BETA_ATTR_NAME).f();
+  name = CONST_ALPHA_PREFIX + ToString(fdata);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    new_node.set_data(&fdata, sizeof(float));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // Bias
+  fdata = (float)_GetNodeAttr(node, BIAS_ATTR_NAME).f();
+  name = CONST_ALPHA_PREFIX + ToString(fdata);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    new_node.set_data(&fdata, sizeof(float));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+
+  // Depth radius
+  int idata = (int)_GetNodeAttr(node, DEPTH_RADIUS_ATTR_NAME).f();
+  name = CONST_ALPHA_PREFIX + ToString(idata);
+  if (param_cache.count(name) == 0) {
+    new_id = cached_nodes + param_cache.size();
+    auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
+    new_node.set_data(&idata, sizeof(float));
+    param_cache.emplace(name, new_id);
+  } else {
+    new_id = param_cache.at(name);
+  }
+  _AddNodeInputInfo(input_info, new_id, 0);
+}
+
+static void _RegFullconnectRelu(GraphTransferInfo& info,
+       GraphTransferInfo::NodeInputInfo& input_info,
+       std::unordered_map<string, int>& param_cache,
+       const Node* node, const int id,
+       const int cached_nodes) {
+
+}
+
+static void _MergeFullConnect(Graph* graph,
+        Node* node, std::vector<Node*>& nodes) {
+  auto add = nodes.at(0);
+  //auto matmul = nodes.at(1);
+  auto bias = _GetInputNoneOpNode(add, MATMUL_OP_NAME);
+  auto edge = *(bias->out_edges().begin());
+  graph->AddEdge(bias, edge->src_output(), node, 2);
+  graph->RemoveEdge(edge);
+
+  // Check the prev reshape
+  auto prev_node = _GetInputNoneOpNode(node, CONST_OP_NAME);
+  if (prev_node != nullptr
+          && _GetNodeOvxOp(prev_node) == RESHAPE_OP_NAME
+          && prev_node->out_edges().size() == 1) {
+    //TODO: Check reshape value is 1
+    //std::cout << "Remove reshape" << std::endl;
+    auto shape_node = _GetInputOpNode(prev_node, CONST_OP_NAME);
+    CopyInputEdges(graph, prev_node, node, true);
+    graph->RemoveEdge(*(prev_node->out_edges().begin()));
+    // Remove shape const node
+    graph->RemoveEdge(*(shape_node->out_edges().begin()));
+  }
+  node->AddAttr(NUM_INPUTS_ATTR, 3);
+  node->AddAttr(NUM_OUTPUTS_ATTR, 1);
+}
+
+static void _MergeFullConnectRelu(Graph* graph,
+        Node* node, std::vector<Node*>& nodes) {
+  node->AddAttr(HAS_RELU_ATTR, true);
+
+  nodes.erase(nodes.begin());
+  _MergeFullConnect(graph, node, nodes);
+}
+
+static void _MergeConv(Graph* graph,
+        Node* node, std::vector<Node*>& nodes) {
+  auto conv = nodes.at(1);
+  auto add = nodes.at(0);
+  auto bias = _GetInputOpNode(add, CONST_OP_NAME);
+  auto edge = *(bias->out_edges().begin());
+  graph->AddEdge(bias, edge->src_output(), node, 2);
+  graph->RemoveEdge(edge);
+
+  // Copy attr
+  int pad;
+  if (_GetNodeAttr(conv, PAD_ATTR).s() == "SAME") {
+    pad = (int)OvxPaddingType::SAME;
+  } else {
+    pad = (int)OvxPaddingType::VALID;
+  }
+  auto strides = _GetNodeAttr(conv, STRIDE_ATTR);
+  node->AddAttr(CONV_PAD_ATTR, pad);
+  node->AddAttr(CONV_STRIDE_ATTR, strides);
+  node->AddAttr(NUM_INPUTS_ATTR, 3);
+  node->AddAttr(NUM_OUTPUTS_ATTR, 1);
+}
+
+static void _MergeConvRelu(Graph* graph,
+        Node* node, std::vector<Node*>& nodes) {
+  node->AddAttr(HAS_RELU_ATTR, true);
+  nodes.erase(nodes.begin());
+  _MergeConv(graph, node, nodes);
+}
+
+static void _MergeConvReluPool(Graph* graph,
+        Node* node, std::vector<Node*>& nodes) {
+  node->AddAttr(HAS_RELU_ATTR, true);
+  auto pool = nodes.at(0);
+
+  int pad;
+  if (_GetNodeAttr(pool, PAD_ATTR).s() == "SAME") {
+    pad = (int)OvxPaddingType::SAME;
+  } else {
+    pad = (int)OvxPaddingType::VALID;
+  }
+  auto strides = _GetNodeAttr(pool, STRIDE_ATTR);
+  auto type = _GetNodeAttr(pool, POOL_TYPE_ATTR);
+  auto ksize = _GetNodeAttr(pool, KSIZE_ATTR);
+  node->AddAttr(POOL_PAD_ATTR, pad);
+  node->AddAttr(POOL_STRIDE_ATTR, strides);
+  node->AddAttr(POOL_TYPE_ATTR, type);
+  node->AddAttr(POOL_KSIZE_ATTR, ksize);
+
+  nodes.erase(nodes.begin());
+  _MergeConvRelu(graph, node, nodes);
+}
+
+static void _TransMaxPool(Node* node) {
+  node->AddAttr(POOL_TYPE_ATTR, (int)OvxPoolType::MAX);
+  node->AddAttr(POOL_KSIZE_ATTR, _GetNodeAttr(node, KSIZE_ATTR));
+  node->AddAttr(POOL_PAD_ATTR, _GetNodeAttr(node, PAD_ATTR));
+  node->AddAttr(POOL_STRIDE_ATTR, _GetNodeAttr(node, STRIDE_ATTR));
+}
+
+static void _TransAvgPool(Node* node) {
+  node->AddAttr(POOL_TYPE_ATTR, (int)OvxPoolType::AVG);
+  node->AddAttr(POOL_KSIZE_ATTR, _GetNodeAttr(node, KSIZE_ATTR));
+  node->AddAttr(POOL_PAD_ATTR, _GetNodeAttr(node, PAD_ATTR));
+  node->AddAttr(POOL_STRIDE_ATTR, _GetNodeAttr(node, STRIDE_ATTR));
+}
+
+static Node* _GetInputNoneOpNode(Node* node, const string& op) {
+  for (Node* in : node->in_nodes()) {
+    if (_GetNodeOvxOp(in) != op) {
+      return in;
+    }
+  }
+  return nullptr;
+}
+
+static Node* _GetInputOpNode(Node* node, const string& op) {
+  for (Node* in : node->in_nodes()) {
+    if (_GetNodeOvxOp(in) == op) {
+      return in;
+    }
+  }
+  return nullptr;
+}
+
+static void CopyInputEdges(Graph* graph, Node* src,
+        Node* dst, bool remove) {
+  while (!src->in_edges().empty()) {
+    auto in_edge = *(src->in_edges().begin());
+    graph->AddEdge(in_edge->src(), in_edge->src_output(),
+            dst, in_edge->dst_input());
+    if (remove) {
+      graph->RemoveEdge(in_edge);
+    }
+  }
+}
+
+static const AttrValue& _GetNodeAttr(const Node* node, const string& key) {
+  return node->def().attr().at(key);
+}
+
+static const string& _GetNodeOvxOp(const Node* node) {
+  return _GetNodeAttr(node, OVX_OP_ATTR).s();
+}
+
+// Only support remove single input and output node.
+void GraphTransferer::RemoveNode(Graph* graph, Node* node) {
+  while (!node->in_edges().empty()) {
+    auto in_edge = *(node->in_edges().begin());
+    for (const Edge* out_edge : node->out_edges()) {
+      graph->AddEdge(in_edge->src(), in_edge->src_output(),
+              out_edge->dst(), out_edge->dst_input());
+    }
+    graph->RemoveEdge(in_edge);
+  }
+  while (!node->out_edges().empty()) {
+    graph->RemoveEdge(*node->out_edges().begin());
+  }
+}
+
+bool GraphTransferer::CheckAndRemoveNode(Graph* graph, Node* node) {
+  bool remove = false;
+  if (REMOVE_OPS.find(node->type_string()) != REMOVE_OPS.end()) {
+    remove = true;
+    RemoveNode(graph, node);
+    std::cout << "Remove " << node->name() << std::endl;
+  }
+  return remove;
+}
+
+bool GraphTransferer::CheckMergeNodes(Node* node, string& key) {
+  bool merge = false;
+  int match = 0;
+  std::vector<string> matches;
+  Node* org_node = node;
+  for (auto it : MERGE_OPS) {
+    auto tmp_key = std::get<0>(it);
+    //std::cout << "!!!! " + tmp_key <<std::endl;
+    auto ops = std::get<0>(std::get<1>(it));
+    node = org_node;
+    for (auto op : ops) {
+      if (op == node->def().attr().at(OVX_OP_ATTR).s()) {
+        match ++;
+      } else {
+        match = 0;
+        break;
+      }
+      if (match == ops.size()) {
+        break;
+      }
+      // Move node
+      node = _GetInputNoneOpNode(node, CONST_OP_NAME);
+      if (nullptr == node) {
+        match = 0;
+        break;
+      }
+    }
+    if (match == ops.size()) {
+      std::cout << ">>>>>> " + tmp_key <<std::endl;
+      matches.push_back(tmp_key);
+    }
+  }
+  // Find the best
+  if (matches.size() > 0) {
+    merge = true;
+    auto max = matches[0];
+    for (auto it : matches) {
+      auto ops1 = std::get<0>(MERGE_OPS.at(it));
+      auto ops2 = std::get<0>(MERGE_OPS.at(max));
+      if (ops1.size() > ops2.size()) {
+        max = it;
+      }
+    }
+    key = max;
+  }
+  return merge;
+}
+
+Node* GraphTransferer::MergeNodes(const string& op,
+        Graph* graph, Node* node, std::vector<Node*>& merge_nodes) {
+  NodeDef def;
+  Status status;
+  def.set_op("NoOp");
+  def.set_name(node->name());
+  auto new_node = graph->AddNode(def, &status);
+  // TODO: Check status
+  if (new_node == nullptr) {
+    LOG(ERROR) << "Transfer node" + node->name() + " fail";
+    return nullptr;
+  }
+  new_node->AddAttr(OVX_OP_ATTR, op);
+
+  auto r = MERGE_OPS.at(op);
+  int sz = std::get<0>(MERGE_OPS.at(op)).size() - 1;
+  Node* in = node;
+  while (sz >= 0) {
+    merge_nodes.push_back(in);
+    sz --;
+    if (sz < 0) {
+      break;
+    }
+    in = _GetInputNoneOpNode(in, CONST_OP_NAME);
+  }
+  auto start = in;
+  auto last = node;
+  // Copy Edge
+  while (!start->in_edges().empty()) {
+    auto in_edge = *(start->in_edges().begin());
+    graph->AddEdge(in_edge->src(), in_edge->src_output(),
+            new_node, in_edge->dst_input());
+    graph->RemoveEdge(in_edge);
+  }
+  while (!last->out_edges().empty()) {
+    auto out_edge = *(last->out_edges().begin());
+    graph->AddEdge(new_node, out_edge->src_output(),
+            out_edge->dst(), out_edge->dst_input());
+    graph->RemoveEdge(out_edge);
+  }
+  return new_node;
+}
+
+Node* GraphTransferer::CheckAndMergeNodes(Graph* graph, Node* node,
+        std::unordered_set<Node*>& merged_nodes) {
+  string key;
+  if (CheckMergeNodes(node, key)) {
+    LOG(INFO) << "Process merge " + key;
+    std::vector<Node*> nodes;
+    node = MergeNodes(key, graph, node, nodes);
+    string dbg_str;
+    for (auto n : nodes) {
+      merged_nodes.insert(n);
+      dbg_str += n->name() + " ";
+    }
+    LOG(INFO) << dbg_str;
+    std::cout << nodes.size();
+    // Must call func after inserting merged ndoes.
+    auto r = MERGE_OPS.at(key);
+    auto func = std::get<1>(r);
+    if (func != nullptr) {
+      func(graph, node, nodes);
+    }
+  }
+  // Check merge
+  return node;
+}
+
+Node* GraphTransferer::TransformNodeIfNeed(Graph* graph, Node* node) {
+  auto trans_r = TRANS_OPS.find(node->type_string());
+  void (*func)(Node*) = nullptr;
+  string new_type = node->type_string();
+
+  if (trans_r != TRANS_OPS.end()) {
+    auto r = std::get<1>(*trans_r);
+    func = std::get<1>(r);
+    new_type = std::get<0>(r);
+
+    LOG(INFO) << "Transfer " << node->name();
+
+  }
+  // New Node
+  // We don't registry any ovx ops, so sample set all op to "noop",
+  // and put real op to attrs.
+  NodeDef def = node->def();
+  Status status;
+  def.set_op("NoOp");
+  auto new_node = graph->AddNode(def, &status);
+  // TODO: Check status
+  if (new_node == nullptr) {
+    LOG(ERROR) << "Transfer node" + node->name() + " fail";
+    return node;
+  }
+  new_node->AddAttr(OVX_OP_ATTR, new_type);
+  new_node->AddAttr(NUM_OUTPUTS_ATTR, node->num_outputs());
+  new_node->AddAttr(NUM_INPUTS_ATTR, node->num_inputs());
+  if (func != nullptr) {
+    func(new_node);
+  }
+  // Copy edges
+  CopyEdges(graph, node, new_node);
+  return new_node;
+}
+
+void GraphTransferer::CopyEdges(Graph* graph, Node* src, Node* dst) {
+  while (!src->in_edges().empty()) {
+    auto in_edge = *(src->in_edges().begin());
+    graph->AddEdge(in_edge->src(), in_edge->src_output(),
+            dst, in_edge->dst_input());
+    graph->RemoveEdge(in_edge);
+  }
+  while (!src->out_edges().empty()) {
+    auto out_edge = *(src->out_edges().begin());
+    graph->AddEdge(dst, out_edge->src_output(),
+            out_edge->dst(), out_edge->dst_input());
+    graph->RemoveEdge(out_edge);
+  }
 }
 
 /**
@@ -85,21 +765,100 @@ Status GraphTransferer::LoadGraphFromProto(
     }
   }
 
-  std::unordered_multimap<string, const Node*> op_name_to_node_multimap(
-      graph.num_nodes());
-  for (const Node* const node : graph.nodes()) {
-    CacheNode(*node);
-  }
-
-  for (const Node* const node : graph.nodes()) {
-    VLOG(1) << "<Node> " << node->name();
-    for (const Node* const input_node : node->in_nodes()) {
-      const string& name = input_node->name();
-      op_name_to_node_multimap.emplace(name, node);
-      VLOG(1) << "Add dependency: " << name << " -> " << node->name();
+  // Build base structure
+  // Node Mapping
+  std::unordered_set<string> foots;
+  std::unordered_map<string, Node*> map_a;
+  std::unordered_map<string, Node*> map_b;
+  for (Node* node : graph.nodes()) {
+    const string& name = node->name();
+    if (!CheckAndRemoveNode(&graph, node)) {
+      map_a.emplace(name, node);
     }
   }
 
+  // Find the foot nodes
+  // Transfer node after remove node.
+  for (auto it : map_a){
+    Node* node = std::get<1>(it);
+    node = TransformNodeIfNeed(&graph, node);
+    map_b.emplace(node->name(), node);
+
+    if (node->out_edges().size() == 0) {
+      foots.emplace(node->name());
+      std::cout << "Foot: " << node->name() <<std::endl;
+    }
+  }
+
+  // Swap
+  map_a.clear();
+  std::swap(map_a, map_b);
+
+  // Check node num?
+  // Start from foot
+  // Merge nodes
+  std::unordered_set<string> pending(graph.num_nodes());
+  std::unordered_set<Node*> copied_nodes;
+  pending = foots;
+  while (pending.size() > 0) {
+    auto it = pending.cbegin();
+    auto node = map_a[*it];
+    pending.erase(it);
+    if (copied_nodes.find(node) != copied_nodes.end()) {
+      continue;
+    }
+    copied_nodes.insert(node);
+    node = CheckAndMergeNodes(&graph, node, copied_nodes);
+    if (nullptr == node) {
+      continue;
+    }
+    map_b.emplace(node->name(), node);
+
+    for (const Node* const in : node->in_nodes()) {
+      if (pending.find(in->name()) == pending.end()) {
+        pending.insert(in->name());
+        std::cout<< in->name() <<std::endl;
+      }
+    }
+    printf("#############\n");
+  }
+
+  map_a.clear();
+  std::swap(map_a, map_b);
+
+  // May node to id
+  for (auto p : map_a) {
+    auto node = std::get<1>(p);
+    if (node_name_to_id_cache_map_.count(node->name()) > 0) {
+      LOG(ERROR) << "Emplace node to cache failed";
+      return status;
+    }
+    int id = node_name_to_id_cache_map_.size();
+    bool emplace_succeeded = false;
+    std::tie(std::ignore, emplace_succeeded) = node_name_to_id_cache_map_.emplace(
+        node->name(), id);
+
+    printf("%d - ", node_name_to_id_cache_map_[node->name()]);
+    std::cout <<  node->name() << std::endl;
+
+    CHECK(emplace_succeeded);
+    // Check status
+  }
+
+  // Tranfer to graph_transfer_info
+  // Register node
+  for (auto p : map_a) {
+    auto node = std::get<1>(p);
+    status = RegisterNode(ops_definitions, shape_refiner,
+            *node, input_node_info_list, output_node_names);
+    if (!status.ok()) {
+      LOG(ERROR) << "Failed to transfer graph " << status;
+      return status;
+    }
+  }
+
+
+#if 0
   for (const Node* const node : graph.nodes()) {
     status = RegisterNodeIfAllInputsAreCached(
         ops_definitions, shape_refiner, *node, false, input_node_info_list,
@@ -148,6 +907,8 @@ Status GraphTransferer::LoadGraphFromProto(
   if (DBG_DUMP_VERIFICATION_STRING) {
     DumpVerificationStringOfNodeTransferParams();
   }
+#endif
+  printf("Load end!\n");
   return Status();
 }
 
@@ -250,6 +1011,7 @@ GraphTransferInfo& GraphTransferer::GetMutableGraphTransferInfo() {
 }
 
 int GraphTransferer::CacheNode(const Node& node) {
+#if 0
   if (node_name_to_id_cache_map_.count(node.name()) > 0) {
     VLOG(1) << "Emplace node to cache failed";
     // TODO(satok): check here?
@@ -261,6 +1023,7 @@ int GraphTransferer::CacheNode(const Node& node) {
   std::tie(std::ignore, emplace_succeeded) = node_name_to_id_cache_map_.emplace(
       node.name(), node_name_cache_list_.size() - 1);
   CHECK(emplace_succeeded);
+#endif
   return node_name_cache_list_.size() - 1;
 }
 
@@ -277,103 +1040,89 @@ bool GraphTransferer::AreAllInputsCached(const Node& node) const {
 
 Status GraphTransferer::RegisterNode(
     const IGraphTransferOpsDefinitions& ops_definitions,
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
+    const ShapeRefiner& shape_refiner,
     const Node& node,
     const std::vector<std::pair<string, Tensor>>& input_node_info_list,
     const std::vector<string>& output_node_names) {
-  VLOG(1) << "Register node: " << node.name();
-  if (node.name() == SOURCE_NODE_NAME || node.name() == SINK_NODE_NAME) {
-    // Just ignore sink and source
-    return Status();
-  } else if (RemoteFusedGraphExecuteUtils::IsInputNode(input_node_info_list,
-                                                       node.name())) {
-    RegisterInputNode(ops_definitions, shape_refiner, output_tensor_map, node);
-  } else if (node.IsConstant()) {
-    RegisterConstantNode(shape_refiner, node, output_tensor_map);
-  } else if (HasPaddingAndStrides(node)) {
-    RegisterNodeWithPaddingAndStrides(ops_definitions, shape_refiner,
-                                      output_tensor_map, node);
-  } else if (IsNodeFlattenReshape(node, output_tensor_map, shape_refiner)) {
-    RegisterFlattenNode(ops_definitions, shape_refiner, output_tensor_map,
-                        node);
-  } else if (ops_definitions.GetOpIdFor(node.type_string()) !=
+  LOG(INFO) << "Register node: " << node.name();
+  auto node_type = _GetNodeOvxOp(&node);
+  if (node_type == INPUT_OP_NAME) {
+    RegisterInputNode(ops_definitions, shape_refiner, node);
+  } else if (node_type == CONST_OP_NAME) {
+    RegisterConstantNode(node);
+  } else if (ops_definitions.GetOpIdFor(node_type) !=
              IGraphTransferOpsDefinitions::INVALID_OP_ID) {
-    RegisterGenericNode(ops_definitions, shape_refiner, output_tensor_map,
-                        node);
+    RegisterGenericNode(ops_definitions, node);
   } else {
-    return errors::InvalidArgument(node.type_string() +
+    return errors::InvalidArgument(node_type +
                                    " has not been implemented yet.");
   }
 
   return Status();
 }
 
-void GraphTransferer::RegisterConstantNode(
-    const ShapeRefiner& shape_refiner, const Node& node,
-    const TensorShapeMap& output_tensor_map) {
-  VLOG(1) << "Register constant node: " << node.name();
-  CHECK_EQ(node_name_to_id_cache_map_.count(node.name()), 1);
-  const int id = node_name_to_id_cache_map_[node.name()];
-  const int output_node_size = node.num_outputs();
-  CHECK_EQ(output_node_size, 1);
-  // TODO(satok): support multiple outputs?
-  const int output_index = 0;
-  const DataType dt = node.output_type(output_index);
-  const size_t max_bytes_per_data = DataTypeSize(dt);
-  CHECK_GT(max_bytes_per_data, 0)
-      << "dt = " << dt << ", " + DataTypeString(dt) << ", "
-      << max_bytes_per_data << ", " << static_cast<int>(DataTypeSize(dt))
-      << ",,,,,,,";
-  shape_inference::InferenceContext* context = shape_refiner.GetContext(&node);
-  shape_inference::ShapeHandle shape_handle = context->output(output_index);
-  const shape_inference::DimensionHandle num_elements_dim =
-      context->NumElements(shape_handle);
-  std::array<int64, SHAPE_ARRAY_SIZE> shape_array;
-  int data_size;
-  if (context->ValueKnown(num_elements_dim)) {
-    const int64 num_output_elements = context->Value(num_elements_dim);
-    data_size = max_bytes_per_data * num_output_elements;
-    shape_array = BuildShapeArray(shape_handle, context);
-    CheckShape(output_tensor_map, node.name(), shape_array);
-  } else {
-    // Use output tensor for unknown shape
-    const TensorShape* shape;
-    CHECK(FindShapeType(output_tensor_map, node.name(), nullptr, &shape));
-    shape_array = ToTensorShapeArray(*shape);
-    data_size = max_bytes_per_data * shape->num_elements();
+void GraphTransferer::RegisterConstantNode(const Node& node) {
+  LOG(INFO) << "Register constant node: " << node.name();
+
+  Tensor tensor;
+  auto tensor_proto = _GetNodeAttr(&node, "value").tensor();
+  if (!tensor.FromProto(tensor_proto)) {
+    LOG(ERROR) << node.name() + " parse tensor error.";
+    return;
   }
-  CHECK(context->ValueKnown(num_elements_dim));
+
+  auto tensor_shape = tensor.shape();
+  int shape[] = {1, 1, 1, 1};
+  switch (tensor.dims()) {
+    case 0:
+      shape[3] = tensor.NumElements();
+      break;
+    case 1:
+      shape[3] = tensor_shape.dim_size(0);
+      break;
+    case 2:
+      shape[2] = tensor_shape.dim_size(0);
+      shape[3] = tensor_shape.dim_size(1);
+      break;
+    case 3:
+      shape[1] = tensor_shape.dim_size(0);
+      shape[2] = tensor_shape.dim_size(1);
+      shape[3] = tensor_shape.dim_size(2);
+      break;
+    case 4:
+      shape[0] = tensor_shape.dim_size(0);
+      shape[1] = tensor_shape.dim_size(1);
+      shape[2] = tensor_shape.dim_size(2);
+      shape[3] = tensor_shape.dim_size(3);
+      break;
+    default:
+      LOG(ERROR) << node.name() + " shape been implemented yet.";
+      return;
+  }
+  printf("shape: %d, %d, %d, %d\n", shape[0], shape[1],shape[2],shape[3]);
+
+  int id = node_name_to_id_cache_map_.at(node.name());
+
   GraphTransferInfo::ConstNodeInfo& const_node_info =
       *graph_transfer_info_.add_const_node_info();
   const_node_info.set_name(node.name());
   const_node_info.set_node_id(id);
-  // TODO(satok): Make this generic. Never assume rank is 4.
-  CHECK_EQ(4, SHAPE_ARRAY_SIZE);
-  const_node_info.add_shape(shape_array[0]);
-  const_node_info.add_shape(shape_array[1]);
-  const_node_info.add_shape(shape_array[2]);
-  const_node_info.add_shape(shape_array[3]);
-  const TensorProto* proto = nullptr;
-  // TODO(b/32704451): Don't just ignore this status!
-  GetNodeAttr(node.def(), "value", &proto).IgnoreError();
-  Tensor const_tensor;
-  // TODO(b/32704451): Don't just ignore this status!
-  MakeTensorFromProto(*proto, &const_tensor).IgnoreError();
 
-  const_node_info.set_dtype(const_tensor.dtype());
-  // TODO(satok): Remove. Determine constant value without dryrun
-  if (data_size > 0) {
-    const_node_info.set_data(const_tensor.tensor_data().data(), data_size);
+  const_node_info.set_dtype(tensor.dtype());
+  if (tensor.NumElements() > 0) {
+    const_node_info.set_data(tensor.tensor_data().data(), tensor.TotalBytes());
   }
+  const_node_info.add_shape(shape[0]);
+  const_node_info.add_shape(shape[1]);
+  const_node_info.add_shape(shape[2]);
+  const_node_info.add_shape(shape[3]);
 }
 
 int GraphTransferer::RegisterConstantShape(const std::vector<int>& shape) {
   VLOG(1) << "Cache constant shape.";
-  // TODO(satok): Handle non-4dim strides
+  // TODO: Handle non-4dim strides
+#if 0
   CHECK_EQ(shape.size(), 4);
-  const string shape_name = CONST_SHAPE_PREFIX + ToString(shape.at(0)) + 'x' +
-                            ToString(shape.at(1)) + 'x' +
-                            ToString(shape.at(2)) + 'x' + ToString(shape.at(3));
   if (node_name_to_id_cache_map_.count(shape_name) <= 0) {
     node_name_cache_list_.emplace_back(nullptr);
     const int id = node_name_cache_list_.size() - 1;
@@ -389,6 +1138,8 @@ int GraphTransferer::RegisterConstantShape(const std::vector<int>& shape) {
     const_node_info.add_shape(static_cast<int64>(shape[3]));
   }
   return node_name_to_id_cache_map_[shape_name];
+#endif
+  return 0;
 }
 
 bool GraphTransferer::HasPaddingAndStrides(const Node& node) {
@@ -433,89 +1184,36 @@ bool GraphTransferer::IsNodeFlattenReshape(
   }
 }
 
-void GraphTransferer::RegisterNodeWithPaddingAndStrides(
-    const IGraphTransferOpsDefinitions& ops_definitions,
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
-    const Node& node) {
-  CHECK_EQ(node_name_to_id_cache_map_.count(node.name()), 1);
-  const int id = node_name_to_id_cache_map_[node.name()];
-  shape_inference::InferenceContext* context = shape_refiner.GetContext(&node);
-  CHECK_GT(node.def().attr().count(PADDING_ATTR_NAME), 0);
-  // TODO(satok): Use context->GetAttr(...) instead?
-  Padding padding;
-  TF_CHECK_OK(context->GetAttr(PADDING_ATTR_NAME, &padding));
-  CHECK_GT(node.def().attr().count(STRIDES_ATTR_NAME), 0);
-  std::vector<int32> strides;
-  TF_CHECK_OK(context->GetAttr(STRIDES_ATTR_NAME, &strides));
-  const int stride_id = RegisterConstantShape(strides);
-  std::vector<int> extra_inputs{stride_id};
-  if (node.def().attr().count(KSIZE_ATTR_NAME) > 0) {
-    std::vector<int32> kernel_sizes;
-    TF_CHECK_OK(context->GetAttr(KSIZE_ATTR_NAME, &kernel_sizes));
-    const int ksize_id = RegisterConstantShape(kernel_sizes);
-    extra_inputs.insert(extra_inputs.begin(), ksize_id);
-  }
-  const int op_type_id = ops_definitions.GetOpIdFor(node.type_string());
-  CHECK(op_type_id >= 0 && op_type_id < ops_definitions.GetTotalOpsCount())
-      << "Op " << node.type_string() << " not found in map(id = " << op_type_id
-      << ")";
-  // Safety check of padding id
-  CHECK(padding == Padding::VALID ? 1 : 2);
-  AppendNodeParamsWithIoParams(
-      shape_refiner, output_tensor_map, node, node.name(), id,
-      node.type_string(), op_type_id, static_cast<int>(padding),
-      node.num_inputs(), extra_inputs, node.num_outputs(),
-      true /* append_input */, true /* append_output */);
-}
-
 void GraphTransferer::RegisterInputNode(
     const IGraphTransferOpsDefinitions& ops_definitions,
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
-    const Node& node) {
-  VLOG(1) << "Register input node: " << node.name();
+    const ShapeRefiner& shape_refiner, const Node& node) {
+  //VLOG(1) << "Register input node: " << node.name();
   CHECK_EQ(node_name_to_id_cache_map_.count(node.name()), 1);
-  const int id = node_name_to_id_cache_map_[node.name()];
   const string op_type = node.type_string();
   const int op_type_id = ops_definitions.GetOpIdFor(op_type);
   CHECK(op_type_id >= 0 && op_type_id < ops_definitions.GetTotalOpsCount())
       << "Op" << node.name() << ", " << op_type << " is not supported,"
       << op_type_id;
+#if 0
   AppendNodeParamsWithIoParams(
-      shape_refiner, output_tensor_map, node, node.name(), id,
-      node.type_string(), op_type_id, PADDING_NA_ID, node.num_inputs(), {},
+      node, node.name(), id,
+      _GetNodeOvxOp(&node), op_type_id, node.num_inputs(),
       node.num_outputs(), true /* append_input */, true /* append_output */);
-}
-
-void GraphTransferer::RegisterFlattenNode(
-    const IGraphTransferOpsDefinitions& ops_definitions,
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
-    const Node& node) {
-  VLOG(1) << "Register flatten node: " << node.name();
-  CHECK_EQ(node_name_to_id_cache_map_.count(node.name()), 1);
-  const int id = node_name_to_id_cache_map_[node.name()];
-  const string op_type = IGraphTransferOpsDefinitions::FLATTEN_OP_NAME;
-  const int op_type_id = ops_definitions.GetOpIdFor(op_type);
-  CHECK(op_type_id >= 0 && op_type_id < ops_definitions.GetTotalOpsCount());
-
-  AppendNodeParamsWithIoParams(
-      shape_refiner, output_tensor_map, node, node.name(), id,
-      node.type_string(), op_type_id, PADDING_NA_ID, node.num_inputs(), {},
-      node.num_outputs(), true /* append_input */, true /* append_output */);
+#endif
 }
 
 void GraphTransferer::RegisterGenericNode(
     const IGraphTransferOpsDefinitions& ops_definitions,
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
     const Node& node) {
-  VLOG(1) << "Register generic node: " << node.name();
-  CHECK_EQ(node_name_to_id_cache_map_.count(node.name()), 1);
+  //LOG(INFO) << "Register generic node: " << node.name();
+
   const int id = node_name_to_id_cache_map_[node.name()];
-  const int op_type_id = ops_definitions.GetOpIdFor(node.type_string());
-  CHECK(op_type_id >= 0 && op_type_id < ops_definitions.GetTotalOpsCount());
+  const string op_type = _GetNodeOvxOp(&node);
+  const int op_type_id = ops_definitions.GetOpIdFor(op_type);
 
   AppendNodeParamsWithIoParams(
-      shape_refiner, output_tensor_map, node, node.name(), id,
-      node.type_string(), op_type_id, PADDING_NA_ID, node.num_inputs(), {},
+      node, node.name(), id,
+      op_type, op_type_id, node.num_inputs(),
       node.num_outputs(), true /* append_input */, true /* append_output */);
 }
 
@@ -528,19 +1226,21 @@ Status GraphTransferer::RegisterNodeIfAllInputsAreCached(
     const std::vector<std::pair<string, Tensor>>& input_node_info_list,
     const std::vector<string>& output_node_names,
     const TensorShapeMap& output_tensor_map) {
+  return Status();
+#if 0
   if (only_register_const_node && !node.IsConstant()) {
     return Status();
   }
   CHECK(AreAllInputsCached(node));
   return RegisterNode(ops_definitions, shape_refiner, output_tensor_map, node,
                       input_node_info_list, output_node_names);
+#endif
 }
 
 // CAVEAT: Append inputs and outputs params accordingly
 void GraphTransferer::AppendNodeParams(const string& name, const int id,
                                        const string& type, const int type_id,
-                                       const int padding, const int inputs_size,
-                                       const std::vector<int>& extra_inputs,
+                                       const int inputs_size,
                                        const int outputs_size) {
   VLOG(1) << "Append node params: " << name;
   GraphTransferInfo::NodeInfo& node_info =
@@ -549,97 +1249,76 @@ void GraphTransferer::AppendNodeParams(const string& name, const int id,
   node_info.set_node_id(id);
   node_info.set_type_name(type);
   node_info.set_soc_op_id(type_id);
-  node_info.set_padding_id(padding);
-  node_info.set_input_count(inputs_size +
-                            static_cast<int>(extra_inputs.size()));
+  node_info.set_padding_id(0);
+  node_info.set_input_count(static_cast<int>(inputs_size));
   node_info.set_output_count(static_cast<int>(outputs_size));
 }
 
 void GraphTransferer::AppendNodeInputParams(
-    const int id, const Node& node, const std::vector<int>& extra_inputs) {
-  VLOG(1) << "Append input params: " << node.name() << ", " << node.num_inputs()
-          << ", " << extra_inputs.size();
-  GraphTransferInfo::NodeInputInfo& node_input_info =
-      *graph_transfer_info_.add_node_input_info();
+    GraphTransferInfo::NodeInputInfo& node_input_info,
+    const int id, const Node& node) {
+  LOG(INFO) << "Append input params: " << node.name() << ", " << node.num_inputs();
+  //std::cout << _GetNodeOvxOp(&node) << std::endl;
+
   node_input_info.set_node_id(id);
-  for (int i = 0; i < node.num_inputs(); ++i) {
-    const Edge* edge = nullptr;
-    TF_CHECK_OK(node.input_edge(i, &edge));
+  std::vector<const Edge*> edges(node.in_edges().size());
+
+  for (auto edge : node.in_edges()) {
+    edges[edge->dst_input()] = edge;
+  }
+  for (auto edge: edges) {
     const Node* input_node = edge->src();
     const int port = edge->src_output();
 
-    const std::string& op_name = input_node->name();
-    CHECK_GT(node_name_to_id_cache_map_.count(op_name), 0) << op_name;
-    const int src_id = node_name_to_id_cache_map_[op_name];
+    const std::string& in_name = input_node->name();
+    CHECK_GT(node_name_to_id_cache_map_.count(in_name), 0) << in_name;
+    const int src_id = node_name_to_id_cache_map_[in_name];
     GraphTransferInfo::NodeInput& node_input =
         *node_input_info.add_node_input();
     node_input.set_node_id(src_id);
     node_input.set_output_port(port);
   }
-  for (const int extra_input : extra_inputs) {
-    GraphTransferInfo::NodeInput& node_input =
-        *node_input_info.add_node_input();
-    node_input.set_node_id(extra_input);
-    node_input.set_output_port(0);
-  }
 }
 
 void GraphTransferer::AppendNodeOutputParams(
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
-    const int id, const Node& node) {
-  VLOG(1) << "Append output params: " << node.name() << ", "
+        const int id, const Node& node) {
+  LOG(INFO) << "Append output params: " << node.name() << ", "
           << node.num_outputs();
   GraphTransferInfo::NodeOutputInfo& node_output_info =
       *graph_transfer_info_.add_node_output_info();
   node_output_info.set_node_id(id);
-  for (int i = 0; i < node.num_outputs(); ++i) {
-    int data_size = -1;
-    const int output_index = i;
-    const DataType dt = node.output_type(output_index);
-    const size_t max_bytes_per_data = DataTypeSize(dt);
-
-    shape_inference::InferenceContext* context =
-        shape_refiner.GetContext(&node);
-    shape_inference::ShapeHandle shape_handle = context->output(output_index);
-    const shape_inference::DimensionHandle num_elements_dim =
-        context->NumElements(shape_handle);
-    if (context->ValueKnown(num_elements_dim)) {
-      const int64 num_output_elements = context->Value(num_elements_dim);
-      data_size = max_bytes_per_data * num_output_elements;
-      if (!output_tensor_map.empty() && strict_check_mode_) {
-        const TensorShape* shape;
-        CHECK(FindShapeType(output_tensor_map, node.name(), nullptr, &shape));
-        CHECK_EQ(num_output_elements, shape->num_elements())
-            << "num elements of node " << node.name() << " doesn't match "
-            << num_output_elements << " vs " << shape->num_elements() << ", "
-            << node.type_string();
-      }
-    } else {
-      // Use TensorShapeMap for unknown shapes
-      const TensorShape* shape;
-      CHECK(FindShapeType(output_tensor_map, node.name(), nullptr, &shape));
-      data_size = max_bytes_per_data * shape->num_elements();
-    }
-    CHECK_GE(data_size, 0);
-    node_output_info.add_max_byte_size(data_size);
+  const int sz = (int)_GetNodeAttr(&node, NUM_OUTPUTS_ATTR).i();
+  for (int i = 0; i < sz; ++i) {
+    node_output_info.add_max_byte_size(-1);
   }
 }
 
 void GraphTransferer::AppendNodeParamsWithIoParams(
-    const ShapeRefiner& shape_refiner, const TensorShapeMap& output_tensor_map,
     const Node& node, const string& name, const int id, const string& type,
-    const int type_id, const int padding, const int inputs_size,
-    const std::vector<int>& extra_inputs, const int outputs_size,
+    const int type_id, const int inputs_size,
+    const int outputs_size,
     const bool append_input_params, const bool append_output_params) {
-  VLOG(1) << "Append node with io params: " << node.name();
+  LOG(INFO) << "Append node with io params: " << node.name();
+  // Register Parameters.
+
+  GraphTransferInfo::NodeInputInfo& input_info =
+      *graph_transfer_info_.add_node_input_info();
+
   if (append_input_params) {
-    AppendNodeInputParams(id, node, extra_inputs);
+    AppendNodeInputParams(input_info, id, node);
   }
+
+  if (REG_OPS.count(type) > 0) {
+    auto func = REG_OPS.at(type);
+    func(graph_transfer_info_, input_info,
+            const_param_node_cache_map_, &node, id,
+            node_name_to_id_cache_map_.size());
+  }
+
   if (append_output_params) {
-    AppendNodeOutputParams(shape_refiner, output_tensor_map, id, node);
+    AppendNodeOutputParams(id, node);
   }
-  AppendNodeParams(name, id, type, type_id, padding, inputs_size, extra_inputs,
-                   outputs_size);
+  AppendNodeParams(name, id, type, type_id, inputs_size, outputs_size);
 }
 
 /* static */ std::array<int64, GraphTransferer::SHAPE_ARRAY_SIZE>
@@ -837,6 +1516,7 @@ bool GraphTransferer::TransferParamsComparator::operator()(
 void GraphTransferer::ClearCache() {
   node_name_cache_list_.clear();
   node_name_to_id_cache_map_.clear();
+  const_param_node_cache_map_.clear();
 }
 
 void GraphTransferer::DumpNodeTransferParams() const {
@@ -952,499 +1632,8 @@ void GraphTransferer::DumpVerificationStringOfNodeTransferParams() const {
             << graph_transfer_info_.node_output_info_size();
 }
 
-/* static */ GraphTransferInfo::NodeInfo* GraphTransferer::FindNodeInfo(
-    const string& name, GraphTransferInfo* graph_transfer_info) {
-  for (GraphTransferInfo::NodeInfo& node_info :
-       *graph_transfer_info->mutable_node_info()) {
-    if (node_info.name() == name) {
-      return &node_info;
-    }
-  }
-  return nullptr;
-}
-
-/* static */ GraphTransferInfo::NodeInfo* GraphTransferer::FindNodeInfo(
-    const int node_id, GraphTransferInfo* graph_transfer_info) {
-  for (GraphTransferInfo::NodeInfo& node_info :
-       *graph_transfer_info->mutable_node_info()) {
-    if (node_info.node_id() == node_id) {
-      return &node_info;
-    }
-  }
-  return nullptr;
-}
-
-/* static */void GraphTransferer::CopyNodeInfo(
-    GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti, std::vector<int> &except) {
-  for (GraphTransferInfo::NodeInfo& node_info :
-       *src_gti->mutable_node_info()) {
-    int nid = node_info.node_id();
-    bool needCopy = true;
-    for(int exceptNID : except) {
-      if (nid == exceptNID) {
-        needCopy = false;
-        break;
-      }
-    }
-    if (needCopy){
-      GraphTransferInfo::NodeInfo& ni = *dst_gti->add_node_info();
-      ni = node_info;
-    }
-  }
-}
-
-/* static */void GraphTransferer::CopyNodeInputInfo(
-    GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti, std::vector<int> &except) {
-  for (GraphTransferInfo::NodeInputInfo& node_input_info :
-       *src_gti->mutable_node_input_info()) {
-    int nid = node_input_info.node_id();
-    bool needCopy = true;
-    for(int exceptNID : except) {
-      if (nid == exceptNID) {
-        needCopy = false;
-        break;
-      }
-    }
-    if (needCopy){
-      GraphTransferInfo::NodeInputInfo& nii = *dst_gti->add_node_input_info();
-      nii = node_input_info;
-    }
-  }
-}
-
-/* static */void GraphTransferer::CopyNodeOutputInfo(
-    GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti, std::vector<int> &except) {
-  for (GraphTransferInfo::NodeOutputInfo& node_output_info :
-       *src_gti->mutable_node_output_info()) {
-    int nid = node_output_info.node_id();
-    bool needCopy = true;
-    for(int exceptNID : except) {
-      if (nid == exceptNID) {
-        needCopy = false;
-        break;
-      }
-    }
-    if (needCopy){
-      GraphTransferInfo::NodeOutputInfo& noi = *dst_gti->add_node_output_info();
-      noi = node_output_info;
-    }
-  }
-}
-
-
-/* static */ GraphTransferInfo::NodeInputInfo* GraphTransferer::FindNodeInputInfo(
-    const int32 node_id, GraphTransferInfo* graph_transfer_info) {
-  for (GraphTransferInfo::NodeInputInfo& node_input_info :
-       *graph_transfer_info->mutable_node_input_info()) {
-    if (node_input_info.node_id() == node_id) {
-      return &node_input_info;
-    }
-  }
-  return nullptr;
-}
-/* static */ GraphTransferInfo::NodeOutputInfo* GraphTransferer::FindNodeOutputInfo(
-    const int32 node_id, GraphTransferInfo* graph_transfer_info) {
-  for (GraphTransferInfo::NodeOutputInfo& node_output_info :
-       *graph_transfer_info->mutable_node_output_info()) {
-    if (node_output_info.node_id() == node_id) {
-      return &node_output_info;
-    }
-  }
-  return nullptr;
-}
-
-/* static */ void GraphTransferer::MergeInputInfo(
-  const int32 node_id, GraphTransferInfo* graph_transfer_info, GraphTransferInfo::NodeInputInfo *targeInfo, const int32 excludeID) {
-  GraphTransferInfo::NodeInputInfo* sourceInfo = FindNodeInputInfo(node_id, graph_transfer_info);
-  for (const GraphTransferInfo::NodeInput& nodeInput :
-       *sourceInfo->mutable_node_input()) {
-    if (nodeInput.node_id() != excludeID) {
-      GraphTransferInfo::NodeInput& ni = *targeInfo->add_node_input();
-      ni = nodeInput;
-    }
-  }
-}
-/* static */ void GraphTransferer::MapOrigNodeId2NewNodeId(
-  GraphTransferInfo* graph_transfer_info, std::map<int, int>& id_map) {
-  for (GraphTransferInfo::NodeInputInfo& node_input_info :
-       *graph_transfer_info->mutable_node_input_info()) {
-      if (node_input_info.node_input_size() == 0) continue;
-      for (GraphTransferInfo::NodeInput& node_input :
-           *node_input_info.mutable_node_input()) {
-        std::map<int, int>::iterator iter;
-        for(iter = id_map.begin(); iter!=id_map.end(); iter++){
-          if (node_input.node_id() == iter->first){
-            const int32 new_id = iter->second;
-            node_input.set_node_id(new_id);
-            break;
-          }
-        }
-     }
-  }
-}
-
-/* static */ void GraphTransferer::MergeConstNodeInfo(
-  GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti ) {
-  for (const GraphTransferInfo::ConstNodeInfo& constNodeInfo :
-       *src_gti->mutable_const_node_info()) {
-    GraphTransferInfo::ConstNodeInfo& nci = *dst_gti->add_const_node_info();
-    nci = constNodeInfo;
-  }
-}
-
-/* static */ void GraphTransferer::MergeGraphInputNodeInfo(
-  GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti ) {
-  for (const GraphTransferInfo::GraphInputNodeInfo& graphInputNodeInfo :
-       *src_gti->mutable_graph_input_node_info()) {
-    GraphTransferInfo::GraphInputNodeInfo& gini = *dst_gti->add_graph_input_node_info();
-    gini = graphInputNodeInfo;
-  }
-}
-
-/* static */ void GraphTransferer::MergeGraphOutputNodeInfo(
-    GraphTransferInfo* src_gti, GraphTransferInfo* dst_gti ) {
-  for (const GraphTransferInfo::GraphOutputNodeInfo& graphOutputNodeInfo :
-       *src_gti->mutable_graph_output_node_info()) {
-    GraphTransferInfo::GraphOutputNodeInfo& gini = *dst_gti->add_graph_output_node_info();
-    gini = graphOutputNodeInfo;
-  }
-}
-
-/* static */ int GraphTransferer::FindInputOP(
-    int nodeId, int opID, GraphTransferInfo* graph_transfer_info) {
-  GraphTransferInfo::NodeInputInfo* node_input_info = FindNodeInputInfo(nodeId, graph_transfer_info);
-  for (const GraphTransferInfo::NodeInput& node_input :
-     *node_input_info->mutable_node_input()) {
-    GraphTransferInfo::NodeInfo* node_info = FindNodeInfo(node_input.node_id(), graph_transfer_info);
-    if (opID == -1 && node_info != nullptr) {
-      return node_info->node_id(); //Return first input node of this node
-    }
-    if (node_info != nullptr && node_info->soc_op_id() == opID) {
-        return node_info->node_id();
-    }
-  }
-  return -1;
-}
-
 bool GraphTransferer::GraphNodeMerge(){
-  GraphTransferInfo orig_graph_info = graph_transfer_info_;
-  GraphTransferInfo merge_graph_info{};
-  merge_graph_info.Clear();
-  std::vector<int> removeOpID;
-  std::map<int, int> mergedNodeIDMap;
-  LOG(INFO)<<"Orig Graph";
-  int new_node_id = orig_graph_info.node_info_size() +
-                                 orig_graph_info.const_node_info_size();
-  // 2. Setup op nodes
-  //Ruler Convolution Relu Pool
-  for (const GraphTransferInfo::NodeInfo& params :
-       orig_graph_info.node_info()) {
-    const int node_id = params.node_id();
-    const int op_id = params.soc_op_id();
-    if (op_id == (int)SupportedOpType::AVGPOOL ||
-        op_id == (int)SupportedOpType::MAXPOOL) {
-      int relu_id = -1;
-      int bias_add_id = -1;
-      int conv2d_id = -1;
-      int pool_id = node_id;
-      relu_id = FindInputOP(node_id, (int)SupportedOpType::RELU, &orig_graph_info);
-      if (relu_id != -1) {
-        bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD, &orig_graph_info);
-        conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D, &orig_graph_info);
-      }
-      //Found Merge OP
-      if (conv2d_id != -1) {
-        GraphTransferInfo::NodeInfo *conv2d_ninfo = FindNodeInfo(conv2d_id, &orig_graph_info);
-        GraphTransferInfo::NodeInfo *relu_ninfo = FindNodeInfo(relu_id, &orig_graph_info);
-        GraphTransferInfo::NodeInfo *pool_nifo = FindNodeInfo(pool_id, &orig_graph_info);
-        GraphTransferInfo::NodeInfo *bias_add_ninfo = FindNodeInfo(bias_add_id, &orig_graph_info);
-
-        //Step1, Create a new node.
-        new_node_id += 2 /* offset for ids */;
-        mergedNodeIDMap[pool_id] = new_node_id;
-        removeOpID.push_back(conv2d_id);
-        removeOpID.push_back(bias_add_id);
-        removeOpID.push_back(relu_id);
-        removeOpID.push_back(pool_id);
-
-        // Create a new output node
-        GraphTransferInfo::NodeInfo& conv_relu_pool_node_info =
-            *merge_graph_info.add_node_info();
-        conv_relu_pool_node_info.set_name(string("convReluPool")+std::to_string(new_node_id));
-        conv_relu_pool_node_info.set_node_id(new_node_id);
-        conv_relu_pool_node_info.set_type_name("ConvolutionReluePool");
-        conv_relu_pool_node_info.set_soc_op_id(
-            OvxOpsDefinitions::getInstance().GetOpIdFor("ConvolutionReluePool"));
-        conv_relu_pool_node_info.set_padding_id(conv2d_ninfo->padding_id()); //TODO: need set share same padding so far. need split padding to a single node.
-
-        //Step2, set node input count, output count
-        int input_count = conv2d_ninfo->input_count() + bias_add_ninfo->input_count() - 1 + relu_ninfo->input_count() - 1 + pool_nifo->input_count() - 1;
-        if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
-        int output_count = pool_nifo->output_count();
-        conv_relu_pool_node_info.set_input_count(input_count);
-        conv_relu_pool_node_info.set_output_count(output_count);
-
-        //Step3, create Node Input Info, copy input info to the new NodeInput Info, and remove
-        GraphTransferInfo::NodeInputInfo& conv_relu_pool_node_input_info =
-            *merge_graph_info.add_node_input_info();
-        conv_relu_pool_node_input_info.set_node_id(new_node_id);
-        MergeInputInfo(conv2d_id, &orig_graph_info, &conv_relu_pool_node_input_info, -1);
-        if(bias_add_id != -1){
-          MergeInputInfo(bias_add_id, &orig_graph_info, &conv_relu_pool_node_input_info, conv2d_id);
-          MergeInputInfo(relu_id, &orig_graph_info, &conv_relu_pool_node_input_info, bias_add_id);
-        } else {
-          MergeInputInfo(relu_id, &orig_graph_info, &conv_relu_pool_node_input_info, conv2d_id);
-        }
-        MergeInputInfo(pool_id, &orig_graph_info, &conv_relu_pool_node_input_info, relu_id);
-
-        //Step4, create Node Output Info, copy from POOL node, and reset new node id.
-        GraphTransferInfo::NodeOutputInfo& conv_relu_pool_node_output_info =
-            *merge_graph_info.add_node_output_info();
-        conv_relu_pool_node_output_info.CopyFrom(*FindNodeOutputInfo(pool_id, &orig_graph_info));
-        conv_relu_pool_node_output_info.set_node_id(new_node_id);
-      }
-    }
-  }
-  //Ruler Convolution Relu or Full Collect Relu
-  for (const GraphTransferInfo::NodeInfo& params :
-       orig_graph_info.node_info()) {
-    const int node_id = params.node_id();
-    const int op_id = params.soc_op_id();
-    if(op_id == (int)SupportedOpType::RELU) {
-      bool notProcessed = true;
-      for(int i=0; i < removeOpID.size(); i++){
-        if (node_id == removeOpID[i]){
-          notProcessed = false;
-          break;
-        }
-      }
-
-      if(notProcessed){
-        int relu_id = node_id;
-        int conv2d_id = -1;
-        int bias_add_id = -1;
-        int full_connect_id = -1;
-        int flatten_id = -1;
-        int before_flatten_id = -1;
-        bias_add_id = FindInputOP(relu_id,(int)SupportedOpType::BIASADD, &orig_graph_info);
-        conv2d_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::CONV2D, &orig_graph_info);
-        full_connect_id = FindInputOP(bias_add_id != -1 ? bias_add_id : relu_id,(int)SupportedOpType::MATMUL, &orig_graph_info);
-        if (full_connect_id != -1) {
-          flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
-          if (flatten_id != -1) {
-            before_flatten_id = FindInputOP(flatten_id, -1, &orig_graph_info);
-          }
-        }
-        //Ruler Convolution Relu
-        if (conv2d_id != -1){
-          GraphTransferInfo::NodeInfo *conv2d_ninfo = FindNodeInfo(conv2d_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *relu_ninfo = FindNodeInfo(relu_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *bias_add_ninfo = FindNodeInfo(bias_add_id, &orig_graph_info);
-
-          //Step1, Create a new node.
-          new_node_id += 2 /* offset for ids */;
-          mergedNodeIDMap[relu_id] = new_node_id;
-          removeOpID.push_back(conv2d_id);
-          removeOpID.push_back(bias_add_id);
-          removeOpID.push_back(relu_id);
-
-          // Create a new output node
-          GraphTransferInfo::NodeInfo& conv_relu_node_info =
-              *merge_graph_info.add_node_info();
-          conv_relu_node_info.set_name(string("convRelu")+std::to_string(new_node_id));
-          conv_relu_node_info.set_node_id(new_node_id);
-          conv_relu_node_info.set_type_name("ConvolutionRelu");
-          conv_relu_node_info.set_soc_op_id(
-              OvxOpsDefinitions::getInstance().GetOpIdFor("ConvolutionRelu"));
-          conv_relu_node_info.set_padding_id(conv2d_ninfo->padding_id());
-
-          //Step2, set node input count, output count
-          int input_count = conv2d_ninfo->input_count() + relu_ninfo->input_count() - 1;
-          if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
-          int output_count = relu_ninfo->output_count();
-          conv_relu_node_info.set_input_count(input_count);
-          conv_relu_node_info.set_output_count(output_count);
-
-          //Step3, create Node Input Info, copy input info to the new NodeInput Info, and remove
-          GraphTransferInfo::NodeInputInfo& conv_relu_node_input_info =
-              *merge_graph_info.add_node_input_info();
-          conv_relu_node_input_info.set_node_id(new_node_id);
-          MergeInputInfo(conv2d_id, &orig_graph_info, &conv_relu_node_input_info, -1);
-          if(bias_add_id != -1){
-            MergeInputInfo(bias_add_id, &orig_graph_info, &conv_relu_node_input_info, conv2d_id);
-            MergeInputInfo(relu_id, &orig_graph_info, &conv_relu_node_input_info, bias_add_id);
-          } else {
-            MergeInputInfo(relu_id, &orig_graph_info, &conv_relu_node_input_info, conv2d_id);
-          }
-
-          //Step4, create Node Output Info, copy from Relu node, and reset new node id.
-          GraphTransferInfo::NodeOutputInfo& conv_relu_node_output_info =
-              *merge_graph_info.add_node_output_info();
-          conv_relu_node_output_info.CopyFrom(*FindNodeOutputInfo(relu_id, &orig_graph_info));
-          conv_relu_node_output_info.set_node_id(new_node_id);
-
-        } else if (full_connect_id != -1) {
-          //Ruler Full Collect Relu [Flatten]
-          GraphTransferInfo::NodeInfo *relu_ninfo = FindNodeInfo(relu_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *full_collect_ninfo = FindNodeInfo(full_connect_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *bias_add_ninfo = FindNodeInfo(bias_add_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *flatten_ninfo = nullptr;
-          if (flatten_id != -1) {
-            flatten_ninfo = FindNodeInfo(flatten_id, &orig_graph_info);
-            removeOpID.push_back(flatten_id);
-          }
-
-          //Step1, Create a new node.
-          new_node_id += 2 /* offset for ids */;
-          mergedNodeIDMap[relu_id] = new_node_id;
-          removeOpID.push_back(full_connect_id);
-          removeOpID.push_back(bias_add_id);
-          removeOpID.push_back(relu_id);
-
-          // Create a new output node
-          GraphTransferInfo::NodeInfo& fullC_relu_node_info =
-              *merge_graph_info.add_node_info();
-          fullC_relu_node_info.set_name(string("fullConnectRelu")+std::to_string(new_node_id));
-          fullC_relu_node_info.set_node_id(new_node_id);
-          fullC_relu_node_info.set_type_name("FullConnectRelu");
-          fullC_relu_node_info.set_soc_op_id(
-              OvxOpsDefinitions::getInstance().GetOpIdFor("FullConnectRelu"));
-          fullC_relu_node_info.set_padding_id(full_collect_ninfo->padding_id());
-
-          //Step2, set node input count, output count
-          int input_count = full_collect_ninfo->input_count() + relu_ninfo->input_count() -1;
-          if (flatten_id != -1) input_count += flatten_ninfo->input_count() -1;
-          if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
-          int output_count = relu_ninfo->output_count();
-          fullC_relu_node_info.set_input_count(input_count);
-          fullC_relu_node_info.set_output_count(output_count);
-
-          //Step3, create Node Input Info, copy input info to the new NodeInput Info, and remove
-          GraphTransferInfo::NodeInputInfo& fullC_relu_node_input_info =
-              *merge_graph_info.add_node_input_info();
-          fullC_relu_node_input_info.set_node_id(new_node_id);
-          if (flatten_id != -1 && before_flatten_id != -1) {
-            //Skip re_shape op's shape parameter
-            GraphTransferInfo::NodeInputInfo* sourceInfo = FindNodeInputInfo(flatten_id, &orig_graph_info);
-            for (const GraphTransferInfo::NodeInput& nodeInput :
-                 *sourceInfo->mutable_node_input()) {
-              if (nodeInput.node_id() == before_flatten_id) {
-                GraphTransferInfo::NodeInput& ni = *fullC_relu_node_input_info.add_node_input();
-                ni = nodeInput;
-              }
-            }
-          }
-          MergeInputInfo(full_connect_id, &orig_graph_info, &fullC_relu_node_input_info, flatten_id);
-          if(bias_add_id != -1){
-            MergeInputInfo(bias_add_id, &orig_graph_info, &fullC_relu_node_input_info, full_connect_id);
-            MergeInputInfo(relu_id, &orig_graph_info, &fullC_relu_node_input_info, bias_add_id);
-          } else {
-            MergeInputInfo(relu_id, &orig_graph_info, &fullC_relu_node_input_info, full_connect_id);
-          }
-
-          //Step4, create Node Output Info, copy from Relu node, and reset new node id.
-          GraphTransferInfo::NodeOutputInfo& fullC_relu_node_output_info =
-              *merge_graph_info.add_node_output_info();
-          fullC_relu_node_output_info.CopyFrom(*FindNodeOutputInfo(relu_id, &orig_graph_info));
-          fullC_relu_node_output_info.set_node_id(new_node_id);
-
-        }
-      }
-    }
-  }
-  //Ruler Matmul + Bias_Add -> FullConnect
-  for (const GraphTransferInfo::NodeInfo& params :
-       orig_graph_info.node_info()) {
-    const int node_id = params.node_id();
-    const int op_id = params.soc_op_id();
-    if(op_id == (int)SupportedOpType::BIASADD) {
-      bool notProcessed = true;
-      for(int i=0; i < removeOpID.size(); i++){
-        if (node_id == removeOpID[i]){
-          notProcessed = false;
-          break;
-        }
-      }
-
-      if(notProcessed){
-        int bias_add_id = node_id;
-        int full_connect_id = -1;
-        int flatten_id = -1;
-        full_connect_id = FindInputOP(bias_add_id,(int)SupportedOpType::MATMUL, &orig_graph_info);
-        if (full_connect_id != -1)
-          flatten_id = FindInputOP(full_connect_id,(int)SupportedOpType::FLATTEN, &orig_graph_info);
-
-        if (full_connect_id != -1) {
-          GraphTransferInfo::NodeInfo *full_collect_ninfo = FindNodeInfo(full_connect_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *bias_add_ninfo = FindNodeInfo(bias_add_id, &orig_graph_info);
-          GraphTransferInfo::NodeInfo *flatten_ninfo = nullptr;
-          if (flatten_id != -1) {
-            flatten_ninfo = FindNodeInfo(flatten_id, &orig_graph_info);
-            removeOpID.push_back(flatten_id);
-          }
-          //Step1, Create a new node.
-          new_node_id += 2 /* offset for ids */;
-          mergedNodeIDMap[bias_add_id] = new_node_id;
-          removeOpID.push_back(full_connect_id);
-          removeOpID.push_back(bias_add_id);
-
-          // Create a new output node
-          GraphTransferInfo::NodeInfo& full_connect_relu_node_info =
-              *merge_graph_info.add_node_info();
-          full_connect_relu_node_info.set_name(string("fullConnectRelu")+std::to_string(new_node_id));
-          full_connect_relu_node_info.set_node_id(new_node_id);
-          full_connect_relu_node_info.set_type_name("FullConnectRelu");
-          full_connect_relu_node_info.set_soc_op_id(
-              OvxOpsDefinitions::getInstance().GetOpIdFor("FullConnectRelu"));
-          full_connect_relu_node_info.set_padding_id(full_collect_ninfo->padding_id());
-
-          //Step2, set node input count, output count
-          int input_count = full_collect_ninfo->input_count();
-          if (flatten_id != -1) input_count += flatten_ninfo->input_count() -1;
-          if (bias_add_ninfo != nullptr) input_count += bias_add_ninfo->input_count() -1;
-          int output_count = bias_add_ninfo->output_count();
-          full_connect_relu_node_info.set_input_count(input_count);
-          full_connect_relu_node_info.set_output_count(output_count);
-
-          //Step3, create Node Input Info, copy input info to the new NodeInput Info, and remove
-          GraphTransferInfo::NodeInputInfo& full_connect_relu_node_input_info =
-              *merge_graph_info.add_node_input_info();
-          full_connect_relu_node_input_info.set_node_id(new_node_id);
-          if (flatten_id != -1) {
-            MergeInputInfo(flatten_id, &orig_graph_info, &full_connect_relu_node_input_info, -1);
-          }
-          MergeInputInfo(full_connect_id, &orig_graph_info, &full_connect_relu_node_input_info, flatten_id);
-          MergeInputInfo(bias_add_id, &orig_graph_info, &full_connect_relu_node_input_info, full_connect_id);
-
-          //Step4, create Node Output Info, copy from Bias Add node, and reset new node id.
-          GraphTransferInfo::NodeOutputInfo& full_connect_relu_node_output_info =
-              *merge_graph_info.add_node_output_info();
-          full_connect_relu_node_output_info.CopyFrom(*FindNodeOutputInfo(bias_add_id, &orig_graph_info));
-          full_connect_relu_node_output_info.set_node_id(new_node_id);
-        }
-      }
-    }
-  }
-  //Merge All Nodes except removed OP
-  CopyNodeInfo(&orig_graph_info, &merge_graph_info, removeOpID);
-  //Merge All InputNodeInfo except removed OP
-  CopyNodeInputInfo(&orig_graph_info, &merge_graph_info, removeOpID);
-  //Merge All OuptuNodeInfo except removed OP
-  CopyNodeOutputInfo(&orig_graph_info, &merge_graph_info, removeOpID);
-  //Check Input NodeInfo nodeInput use new node ID
-  MapOrigNodeId2NewNodeId(&merge_graph_info, mergedNodeIDMap);
-  //Merge All Const Node
-  MergeConstNodeInfo(&orig_graph_info, &merge_graph_info);
-  //Merge Graph Input Node
-  MergeGraphInputNodeInfo(&orig_graph_info, &merge_graph_info);
-  //Merge Graph Output Node
-  MergeGraphOutputNodeInfo(&orig_graph_info, &merge_graph_info);
-
-  LOG(INFO)<<"Merge Graph";
-
-  graph_transfer_info_ = merge_graph_info;
   return true;
 }
-
 
 }  // namespace tensorflow
