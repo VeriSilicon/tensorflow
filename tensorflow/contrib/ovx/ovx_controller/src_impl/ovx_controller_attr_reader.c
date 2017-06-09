@@ -43,6 +43,11 @@ limitations under the License.
 
 #define ATTR_CONCAT_DIM                 _hash_op_port(VSI_NN_OP_CONCAT, 0x0)
 
+#define ATTR_LRN_ALPHA                  _hash_op_port(VSI_NN_OP_LRN, 0x1)
+#define ATTR_LRN_BETA                   _hash_op_port(VSI_NN_OP_LRN, 0x2)
+#define ATTR_LRN_BIAS                   _hash_op_port(VSI_NN_OP_LRN, 0x3)
+#define ATTR_LRN_DEPTH_RADIUS           _hash_op_port(VSI_NN_OP_LRN, 0x4)
+
 // Const tensor
 #define TENSOR_CONV_WEIGHTS             _hash_op_port(VSI_NN_OP_CONV2D, 0x1)
 #define TENSOR_CONV_RELU_WEIGHTS        _hash_op_port(VSI_NN_OP_CONV_RELU, 0x1)
@@ -102,15 +107,27 @@ int ovx_controller_read_attr(vsi_nn_node_t* node,
       break;
     case ATTR_POOL_PAD:
     case ATTR_CONV_RELU_POOL_PAD_POOL:
-      node->nn_param.pool.pad_type = ((uint32_t *)attr)[0];
+      node->nn_param.pool.pad_type = (uint32_t)((int32_t*)attr)[0];
       break;
     case ATTR_CONV_PAD:
     case ATTR_CONV_RELU_PAD:
     case ATTR_CONV_RELU_POOL_PAD_CONV:
-      node->nn_param.conv2d.pad_type = ((uint32_t *)attr)[0];
+      node->nn_param.conv2d.pad_type = (uint32_t)((int32_t*)attr)[0];
       break;
     case ATTR_CONCAT_DIM:
       node->nn_param.concat.axis = s_tf_dim[((uint32_t *)attr)[0]];
+      break;
+    case ATTR_LRN_ALPHA:
+      node->nn_param.lrn.alpha = ((float*)attr)[0];
+      break;
+    case ATTR_LRN_BETA:
+      node->nn_param.lrn.beta = ((float*)attr)[0];
+      break;
+    case ATTR_LRN_BIAS:
+      node->nn_param.lrn.bias = ((float*)attr)[0];
+      break;
+    case ATTR_LRN_DEPTH_RADIUS:
+      node->nn_param.lrn.size = (uint32_t)((int32_t*)attr)[0];
       break;
 
 

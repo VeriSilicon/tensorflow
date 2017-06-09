@@ -352,7 +352,7 @@ static void _RegLRN(GraphTransferInfo& info,
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node->set_dtype(DT_INT32);
+    new_node->set_dtype(DT_FLOAT);
     new_node->set_data(&fdata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
@@ -362,11 +362,11 @@ static void _RegLRN(GraphTransferInfo& info,
 
   // Beta
   fdata = (float)_GetNodeAttr(node, BETA_ATTR_NAME).f();
-  name = CONST_ALPHA_PREFIX + ToString(fdata);
+  name = CONST_BETA_PREFIX + ToString(fdata);
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node->set_dtype(DT_INT32);
+    new_node->set_dtype(DT_FLOAT);
     new_node->set_data(&fdata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
@@ -376,11 +376,11 @@ static void _RegLRN(GraphTransferInfo& info,
 
   // Bias
   fdata = (float)_GetNodeAttr(node, BIAS_ATTR_NAME).f();
-  name = CONST_ALPHA_PREFIX + ToString(fdata);
+  name = CONST_BIAS_PREFIX + ToString(fdata);
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node->set_dtype(DT_INT32);
+    new_node->set_dtype(DT_FLOAT);
     new_node->set_data(&fdata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
@@ -389,8 +389,8 @@ static void _RegLRN(GraphTransferInfo& info,
   _AddNodeInputInfo(input_info, new_id, 0);
 
   // Depth radius
-  int idata = (int)_GetNodeAttr(node, DEPTH_RADIUS_ATTR_NAME).f();
-  name = CONST_ALPHA_PREFIX + ToString(idata);
+  int idata = (int)_GetNodeAttr(node, DEPTH_RADIUS_ATTR_NAME).i();
+  name = CONST_DEPTH_RADIUS_PREFIX + ToString(idata);
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
