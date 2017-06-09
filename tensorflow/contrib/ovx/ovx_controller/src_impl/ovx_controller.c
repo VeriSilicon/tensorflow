@@ -132,7 +132,7 @@ uint32_t ovx_controller_AppendConstTensor(
   }
   new_port = ovx_controller_read_attr(node, port,
           shape, dim_num, data, data_length);
-  if (new_port > 0) {
+  if (new_port >= 0) {
     tensor_id = ovx_controller_AppendTensor(
             VSI_NN_NODE_ID_NA, 0,
             shape, dim_num,
@@ -243,6 +243,9 @@ bool ovx_controller_FillInputTensor(uint32_t tensor_id,
 void ovx_controller_SetNodeInput(
         uint32_t node_id, uint32_t tensor_id, int port) {
   vsi_nn_node_t * node = vsi_nn_GetNode(s_graph, node_id);
+  if (VSI_NN_OP_CONCAT == node->op) {
+    port --;
+  }
   if (NULL == node) {
     OVXLOGE("Find node %x fail.", node_id);
     return;

@@ -50,8 +50,6 @@ bool OvxControlWrapper::Init(const RemoteFusedGraphExecuteInfo& info) {
   graph_transferer_.SetSerializedGraphTransferInfo(
       info.serialized_executor_parameters());
 
-  graph_transferer_.GraphNodeMerge();
-
   execute_info_ = &info;
   return soc_interface_Init();
 }
@@ -63,8 +61,8 @@ bool OvxControlWrapper::SetupGraph() {
   std::unordered_map<int, uint32> ovxnode_map;
   std::unordered_map<int, std::vector<std::tuple<int, int>>> input_ports_map;
   std::unordered_map<int, std::vector<uint32>> ovxtensor_map;
-  std::vector<int> graph_inputs;
-  std::vector<int> graph_outputs;
+  std::unordered_map<int, const GraphTransferInfo::GraphInputNodeInfo&> graph_inputs;
+  std::unordered_map<int, const GraphTransferInfo::GraphOutputNodeInfo&> graph_outputs;
   ret = true;
   // Copy graph transfer info to modify to adapt ovx nn library
   GraphTransferInfo& graph_transfer_info =
@@ -76,25 +74,19 @@ bool OvxControlWrapper::SetupGraph() {
     gt.DumpVerificationStringOfNodeTransferParams();
   }
 
-  return false;
-
   for (const GraphTransferInfo::GraphInputNodeInfo& graph_input :
        graph_transfer_info.graph_input_node_info()) {
     GraphTransferInfo::NodeInfo* node = FindNodeInfo(
             graph_input.name(), &graph_transfer_info);
-    graph_inputs.push_back(node->node_id());
+    graph_inputs.emplace(node->node_id(), graph_input);
   }
 
   for (const GraphTransferInfo::GraphOutputNodeInfo& graph_output :
        graph_transfer_info.graph_output_node_info()) {
     GraphTransferInfo::NodeInfo* node = FindNodeInfo(
             graph_output.name(), &graph_transfer_info);
-    graph_outputs.push_back(node->node_id());
+    graph_outputs.emplace(node->node_id(), graph_output);
   }
-
-  //TODO: Fix me
-  //graph_inputs.push_back(0x0c);
-  //graph_outputs.push_back(0x1d);
 
   // Count tensors
   int tensor_count = 0;
@@ -118,25 +110,31 @@ bool OvxControlWrapper::SetupGraph() {
     const int node_id = params.node_id();
     const int op_id = params.soc_op_id();
 
-    //TODO: if not input
-    if (op_id != 21) {
+    if (op_id != (int)SupportedOpType::INPUT) {
       const uint32 ovxnode_id = soc_interface_AppendNode(
                                params.name().c_str(), op_id);
+      printf("Node: %x -> %d\n", node_id, ovxnode_id);
       ovxnode_map.emplace(node_id, ovxnode_id);
     }
   }
 
-  #define OVX_NODE_ID_NA   ((uint32)-1)
-  #define OVX_TENSOR_ID_NA   ((uint32)-1)
-  #define OVX_MAX_DIM_NUM    (4)
+  #define OVX_NODE_ID_NA        ((uint32)-1)
+  #define OVX_TENSOR_ID_NA      ((uint32)-1)
+  #define OVX_MAX_DIM_NUM       (4)
+  #define OVX_INPUT_DIM_NUM     (4)
+  #define OVX_OUTPUT_DIM_NUM    (4)
   // Init graph input tensor
-  for (const int node_id : graph_inputs) {
-    // TODO: Fix me
-    // Find node by id
-    // Get node shape
-    uint32 shape[] = {1, 28, 28, 1};
-    int dim_num = 4;
+  for (auto input : graph_inputs) {
+    const int node_id = std::get<0>(input);
+    const GraphTransferInfo::GraphInputNodeInfo& node_info = std::get<1>(input);
+    CHECK(node_info.shape_size() == OVX_INPUT_DIM_NUM);
+    uint32 shape[OVX_INPUT_DIM_NUM] = {0};
+    int dim_num = OVX_INPUT_DIM_NUM;
     int dtype = 0;
+	shape[0] = node_info.shape(0);
+    shape[1] = node_info.shape(1);
+    shape[2] = node_info.shape(2);
+    shape[3] = node_info.shape(3);
     uint32 tensor_id = soc_interface_AppendTensor(
        OVX_NODE_ID_NA, 0, shape, dim_num, nullptr, 0, dtype);
     ovxtensor_map[node_id].push_back(tensor_id);
@@ -144,13 +142,17 @@ bool OvxControlWrapper::SetupGraph() {
   }
 
   // Init graph output tensor
-  for (const int node_id : graph_outputs) {
-    // TODO: Fix me
-    // Find node by id
-    // Get node shape
-    uint32 shape[] = {1, 1, 1, 10};
-    int dim_num = 4;
+  for (auto output : graph_outputs) {
+    const int node_id = std::get<0>(output);
+    const GraphTransferInfo::GraphOutputNodeInfo& node_info = std::get<1>(output);
+    CHECK(node_info.shape_size() == OVX_INPUT_DIM_NUM);
+    uint32 shape[OVX_OUTPUT_DIM_NUM] = {0};
+    int dim_num = OVX_OUTPUT_DIM_NUM;
     int dtype = 0;
+    shape[0] = node_info.shape(0);
+    shape[1] = node_info.shape(1);
+    shape[2] = node_info.shape(2);
+    shape[3] = node_info.shape(3);
     uint32 ovxnode_id = ovxnode_map[node_id];
 
     // TODO: Fix output port
@@ -166,10 +168,7 @@ bool OvxControlWrapper::SetupGraph() {
        graph_transfer_info.node_output_info()) {
     const int node_id = output_info.node_id();
     // Skip input, output node.
-    if ((std::find(graph_inputs.begin(), graph_inputs.end(), node_id)
-            != graph_inputs.end()) ||
-        (std::find(graph_outputs.begin(), graph_outputs.end(), node_id)
-            != graph_outputs.end())) {
+    if (graph_inputs.count(node_id) > 0 || graph_outputs.count(node_id) > 0) {
         continue;
     }
     const int count = output_info.max_byte_size_size();
@@ -187,6 +186,7 @@ bool OvxControlWrapper::SetupGraph() {
       if (OVX_TENSOR_ID_NA == tensor_id) {
           ret = false;
       }
+      //printf("APPEND tensor %d: %d\n", node_id, tensor_id);
       ovxtensor_map[node_id].push_back(tensor_id);
     }
   }
@@ -201,17 +201,18 @@ bool OvxControlWrapper::SetupGraph() {
       const GraphTransferInfo::NodeInput& node_input =
           input_info.node_input(i);
       int input_id = node_input.node_id();
-    if (input_ports_map.find(input_id) != input_ports_map.end()) {
+      int port  = node_input.output_port();
+    if (input_ports_map.count(input_id) > 0) {
         input_ports_map.emplace(input_id, std::vector<std::tuple<int, int>>());
       }
       input_ports_map[input_id].push_back(std::make_tuple(node_id, i));
-      auto got = ovxtensor_map.find(input_id);
-      if (got != ovxtensor_map.end()) {
+      if (ovxtensor_map.count(input_id) > 0) {
+        auto tensors = ovxtensor_map.at(input_id);
         uint32 ovxnode_id = ovxnode_map[node_id];
         if (OVX_NODE_ID_NA == ovxnode_id) {
             continue;
         }
-        uint32 ovxtensor_id = got->second[i];
+        uint32 ovxtensor_id = tensors[port];
         soc_interface_SetNodeInput(ovxnode_id, ovxtensor_id, i);
       }
     }
@@ -254,6 +255,11 @@ bool OvxControlWrapper::SetupGraph() {
     // construct graph
     ret = soc_interface_ConstructGraph();
   }
+  ovxnode_map.clear();
+  input_ports_map.clear();
+  ovxtensor_map.clear();
+  graph_inputs.clear();
+  graph_outputs.clear();
   return ret;
 
 }

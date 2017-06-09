@@ -95,7 +95,7 @@ static const AttrValue& _GetNodeAttr(const Node* node, const string& key);
 
 static void CopyInputEdges(Graph* graph, Node* src, Node* dst, bool remove);
 
-static GraphTransferInfo::ConstNodeInfo& _RegisterConstantShapeNode(
+static GraphTransferInfo::ConstNodeInfo* _RegisterConstantShapeNode(
        GraphTransferInfo& info, string& name,
        const std::vector<int>& shape, const int new_id);
 
@@ -207,17 +207,17 @@ static string _ShapeToName(std::vector<int> shape) {
   return shape_name;
 }
 
-static GraphTransferInfo::ConstNodeInfo& _RegisterConstantShapeNode(
+static GraphTransferInfo::ConstNodeInfo* _RegisterConstantShapeNode(
        GraphTransferInfo& info, string& name,
        const std::vector<int>& shape, const int new_id) {
   CHECK_EQ(shape.size(), 4);
-  GraphTransferInfo::ConstNodeInfo& node = *info.add_const_node_info();
-  node.set_name(name);
-  node.set_node_id(new_id);
-  node.add_shape(static_cast<int64>(shape[0]));
-  node.add_shape(static_cast<int64>(shape[1]));
-  node.add_shape(static_cast<int64>(shape[2]));
-  node.add_shape(static_cast<int64>(shape[3]));
+  GraphTransferInfo::ConstNodeInfo* node = info.add_const_node_info();
+  node->set_name(name);
+  node->set_node_id(new_id);
+  node->add_shape(static_cast<int64>(shape[0]));
+  node->add_shape(static_cast<int64>(shape[1]));
+  node->add_shape(static_cast<int64>(shape[2]));
+  node->add_shape(static_cast<int64>(shape[3]));
   return node;
 }
 
@@ -265,7 +265,8 @@ static void _RegConv(GraphTransferInfo& info,
     shape = {1, 1, 1, 1};
     new_id = cached_nodes + param_cache.size();
     auto pad_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    pad_node.set_data(&pad, sizeof(int));
+    pad_node->set_dtype(DT_INT32);
+    pad_node->set_data((uint8*)&pad, sizeof(int));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -313,7 +314,8 @@ static void _RegPool(GraphTransferInfo& info,
     shape = {1, 1, 1, 1};
     new_id = cached_nodes + param_cache.size();
     auto pad_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    pad_node.set_data(&pad, sizeof(int));
+    pad_node->set_dtype(DT_INT32);
+    pad_node->set_data((int8*)&pad, sizeof(int));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -327,7 +329,8 @@ static void _RegPool(GraphTransferInfo& info,
     shape = {1, 1, 1, 1};
     new_id = cached_nodes + param_cache.size();
     auto pad_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    pad_node.set_data(&ptype, sizeof(int));
+    pad_node->set_dtype(DT_INT32);
+    pad_node->set_data(&ptype, sizeof(int));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -349,7 +352,8 @@ static void _RegLRN(GraphTransferInfo& info,
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node.set_data(&fdata, sizeof(float));
+    new_node->set_dtype(DT_INT32);
+    new_node->set_data(&fdata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -362,7 +366,8 @@ static void _RegLRN(GraphTransferInfo& info,
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node.set_data(&fdata, sizeof(float));
+    new_node->set_dtype(DT_INT32);
+    new_node->set_data(&fdata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -375,7 +380,8 @@ static void _RegLRN(GraphTransferInfo& info,
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node.set_data(&fdata, sizeof(float));
+    new_node->set_dtype(DT_INT32);
+    new_node->set_data(&fdata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -388,7 +394,8 @@ static void _RegLRN(GraphTransferInfo& info,
   if (param_cache.count(name) == 0) {
     new_id = cached_nodes + param_cache.size();
     auto new_node = _RegisterConstantShapeNode(info, name, shape, new_id);
-    new_node.set_data(&idata, sizeof(float));
+    new_node->set_dtype(DT_INT32);
+    new_node->set_data(&idata, sizeof(float));
     param_cache.emplace(name, new_id);
   } else {
     new_id = param_cache.at(name);
@@ -479,9 +486,9 @@ static void _MergeConvReluPool(Graph* graph,
   } else {
     pad = (int)OvxPaddingType::VALID;
   }
-  auto strides = _GetNodeAttr(pool, STRIDE_ATTR);
+  auto strides = _GetNodeAttr(pool, POOL_STRIDE_ATTR);
   auto type = _GetNodeAttr(pool, POOL_TYPE_ATTR);
-  auto ksize = _GetNodeAttr(pool, KSIZE_ATTR);
+  auto ksize = _GetNodeAttr(pool, POOL_KSIZE_ATTR);
   node->AddAttr(POOL_PAD_ATTR, pad);
   node->AddAttr(POOL_STRIDE_ATTR, strides);
   node->AddAttr(POOL_TYPE_ATTR, type);
@@ -492,16 +499,30 @@ static void _MergeConvReluPool(Graph* graph,
 }
 
 static void _TransMaxPool(Node* node) {
+  int pad;
+  if (_GetNodeAttr(node, PAD_ATTR).s() == "SAME") {
+    pad = (int)OvxPaddingType::SAME;
+  } else {
+    pad = (int)OvxPaddingType::VALID;
+  }
+
   node->AddAttr(POOL_TYPE_ATTR, (int)OvxPoolType::MAX);
   node->AddAttr(POOL_KSIZE_ATTR, _GetNodeAttr(node, KSIZE_ATTR));
-  node->AddAttr(POOL_PAD_ATTR, _GetNodeAttr(node, PAD_ATTR));
+  node->AddAttr(POOL_PAD_ATTR, pad);
   node->AddAttr(POOL_STRIDE_ATTR, _GetNodeAttr(node, STRIDE_ATTR));
 }
 
 static void _TransAvgPool(Node* node) {
+  int pad;
+  if (_GetNodeAttr(node, PAD_ATTR).s() == "SAME") {
+    pad = (int)OvxPaddingType::SAME;
+  } else {
+    pad = (int)OvxPaddingType::VALID;
+  }
+
   node->AddAttr(POOL_TYPE_ATTR, (int)OvxPoolType::AVG);
   node->AddAttr(POOL_KSIZE_ATTR, _GetNodeAttr(node, KSIZE_ATTR));
-  node->AddAttr(POOL_PAD_ATTR, _GetNodeAttr(node, PAD_ATTR));
+  node->AddAttr(POOL_PAD_ATTR, pad);
   node->AddAttr(POOL_STRIDE_ATTR, _GetNodeAttr(node, STRIDE_ATTR));
 }
 
@@ -563,7 +584,7 @@ bool GraphTransferer::CheckAndRemoveNode(Graph* graph, Node* node) {
   if (REMOVE_OPS.find(node->type_string()) != REMOVE_OPS.end()) {
     remove = true;
     RemoveNode(graph, node);
-    std::cout << "Remove " << node->name() << std::endl;
+    //std::cout << "Remove " << node->name() << std::endl;
   }
   return remove;
 }
@@ -596,7 +617,6 @@ bool GraphTransferer::CheckMergeNodes(Node* node, string& key) {
       }
     }
     if (match == ops.size()) {
-      std::cout << ">>>>>> " + tmp_key <<std::endl;
       matches.push_back(tmp_key);
     }
   }
@@ -628,7 +648,12 @@ Node* GraphTransferer::MergeNodes(const string& op,
     LOG(ERROR) << "Transfer node" + node->name() + " fail";
     return nullptr;
   }
-  new_node->AddAttr(OVX_OP_ATTR, op);
+  // Workaround: current fullconnect is not support yet.
+  if ("FullConnect" == op) {
+    new_node->AddAttr(OVX_OP_ATTR, "FullConnectRelu");
+  } else {
+    new_node->AddAttr(OVX_OP_ATTR, op);
+  }
 
   auto r = MERGE_OPS.at(op);
   int sz = std::get<0>(MERGE_OPS.at(op)).size() - 1;
@@ -672,7 +697,7 @@ Node* GraphTransferer::CheckAndMergeNodes(Graph* graph, Node* node,
       dbg_str += n->name() + " ";
     }
     LOG(INFO) << dbg_str;
-    std::cout << nodes.size();
+    //std::cout << nodes.size();
     // Must call func after inserting merged ndoes.
     auto r = MERGE_OPS.at(key);
     auto func = std::get<1>(r);
@@ -786,7 +811,7 @@ Status GraphTransferer::LoadGraphFromProto(
 
     if (node->out_edges().size() == 0) {
       foots.emplace(node->name());
-      std::cout << "Foot: " << node->name() <<std::endl;
+      //std::cout << "Foot: " << node->name() <<std::endl;
     }
   }
 
@@ -817,10 +842,9 @@ Status GraphTransferer::LoadGraphFromProto(
     for (const Node* const in : node->in_nodes()) {
       if (pending.find(in->name()) == pending.end()) {
         pending.insert(in->name());
-        std::cout<< in->name() <<std::endl;
+        //std::cout<< in->name() <<std::endl;
       }
     }
-    printf("#############\n");
   }
 
   map_a.clear();
@@ -838,8 +862,8 @@ Status GraphTransferer::LoadGraphFromProto(
     std::tie(std::ignore, emplace_succeeded) = node_name_to_id_cache_map_.emplace(
         node->name(), id);
 
-    printf("%d - ", node_name_to_id_cache_map_[node->name()]);
-    std::cout <<  node->name() << std::endl;
+    //printf("%d - ", node_name_to_id_cache_map_[node->name()]);
+    //std::cout <<  node->name() << std::endl;
 
     CHECK(emplace_succeeded);
     // Check status
@@ -870,6 +894,7 @@ Status GraphTransferer::LoadGraphFromProto(
   }
 
   SortParams(output_node_names);
+#endif
 
   for (const std::pair<string, Tensor>& input_node_info :
        input_node_info_list) {
@@ -907,8 +932,6 @@ Status GraphTransferer::LoadGraphFromProto(
   if (DBG_DUMP_VERIFICATION_STRING) {
     DumpVerificationStringOfNodeTransferParams();
   }
-#endif
-  printf("Load end!\n");
   return Status();
 }
 
@@ -1099,7 +1122,7 @@ void GraphTransferer::RegisterConstantNode(const Node& node) {
       LOG(ERROR) << node.name() + " shape been implemented yet.";
       return;
   }
-  printf("shape: %d, %d, %d, %d\n", shape[0], shape[1],shape[2],shape[3]);
+  //printf("shape: %d, %d, %d, %d\n", shape[0], shape[1],shape[2],shape[3]);
 
   int id = node_name_to_id_cache_map_.at(node.name());
 
@@ -1189,17 +1212,18 @@ void GraphTransferer::RegisterInputNode(
     const ShapeRefiner& shape_refiner, const Node& node) {
   //VLOG(1) << "Register input node: " << node.name();
   CHECK_EQ(node_name_to_id_cache_map_.count(node.name()), 1);
-  const string op_type = node.type_string();
+  const int id = node_name_to_id_cache_map_[node.name()];
+  const string op_type = _GetNodeOvxOp(&node);
   const int op_type_id = ops_definitions.GetOpIdFor(op_type);
+
   CHECK(op_type_id >= 0 && op_type_id < ops_definitions.GetTotalOpsCount())
       << "Op" << node.name() << ", " << op_type << " is not supported,"
       << op_type_id;
-#if 0
+
   AppendNodeParamsWithIoParams(
       node, node.name(), id,
       _GetNodeOvxOp(&node), op_type_id, node.num_inputs(),
       node.num_outputs(), true /* append_input */, true /* append_output */);
-#endif
 }
 
 void GraphTransferer::RegisterGenericNode(

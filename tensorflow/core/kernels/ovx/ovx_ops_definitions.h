@@ -27,8 +27,9 @@ enum class OvxPoolType {
 };
 
 enum class OvxPaddingType {
-  SAME,
-  VALID
+  AUTO,
+  VALID,
+  SAME
 };
 
 // HVX internal supported ops names
@@ -40,23 +41,17 @@ enum class SupportedOpType {
   FULLCONNECT,
   FULLCONNECT_RELU,
   SOFTMAX,
-  LEAKY_RELU,
   POOL,
+  LEAKY_RELU,
   LRN,
   CONCAT,
   NOP,
 
-  RELU,
-  MATMUL,
-
-  AVGPOOL,
-  MAXPOOL,
-  RESHAPE,
-  FLATTEN,
-  TANH,
-  SIGMOID,
   INPUT,
   OUTPUT,
+  RELU,
+  MATMUL,
+  RESHAPE,
 
   MIN,
   MAX,

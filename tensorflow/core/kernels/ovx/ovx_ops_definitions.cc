@@ -23,19 +23,19 @@ namespace tensorflow {
 
 const std::unordered_map<string, SupportedOpType> OP_NAME_TO_SOC_OP_TYPE_MAP{
   // Custom Op name
-  {"INPUT", SupportedOpType::INPUT},
-  {"OUTPUT", SupportedOpType::OUTPUT},
+  {"Input", SupportedOpType::INPUT},
+  {"Output", SupportedOpType::OUTPUT},
   {"NoOp", SupportedOpType::NOP},
   // Tensorflow op name
   {"Min", SupportedOpType::MIN},
   {"Max", SupportedOpType::MAX},
   {"Softmax", SupportedOpType::SOFTMAX},
-  {"Placeholder", SupportedOpType::NOP},
+  {"Placeholder", SupportedOpType::INPUT},
   {"Conv2D", SupportedOpType::CONV2D},
   {"Add", SupportedOpType::ADD},
   {"BiasAdd", SupportedOpType::ADD},
   {"Relu", SupportedOpType::RELU},
-  {"Pool", SupportedOpType::MAXPOOL},
+  {"Pool", SupportedOpType::POOL},
   {"ConvolutionReluPool", SupportedOpType::CONVOLUTION_RELU_POOL},
   {"ConvolutionRelu", SupportedOpType::CONVOLUTION_RELU},
   {"FullConnectRelu", SupportedOpType::FULLCONNECT_RELU},
