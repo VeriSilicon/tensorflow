@@ -72,8 +72,6 @@ class GraphTransferer {
       const bool dry_run_for_unknown_shape,
       RemoteFusedGraphExecuteUtils::TensorShapeMap* tensor_shape_map);
 
-   bool GraphNodeMerge();
-
   // Sort params so that all input nodes appear before consumer nodes.
   // CAVEAT: This may be slow if the number of nodes are too large
   void SortParams(const std::vector<string>& output_node_names);
@@ -101,10 +99,6 @@ class GraphTransferer {
     const std::unordered_map<int, std::unordered_set<int>>& dependency_map_;
   };
 
-  int CacheNode(const Node& node);
-
-  bool AreAllInputsCached(const Node& node) const;
-
   Status RegisterNode(
       const IGraphTransferOpsDefinitions& ops_definitions,
       const ShapeRefiner& shape_refiner,
@@ -114,31 +108,12 @@ class GraphTransferer {
 
   void RegisterConstantNode(const Node& node);
 
-  int RegisterConstantShape(const std::vector<int>& shape);
-
-  bool HasPaddingAndStrides(const Node& node);
-
-  // Return true if the node is a reshape op which just flattens input
-  // TODO(satok): Remove this method once generic reshape op is implemented in
-  // SOC
-  bool IsNodeFlattenReshape(const Node& node,
-                            const TensorShapeMap& output_tensor_map,
-                            const ShapeRefiner& shape_refiner);
-
   void RegisterInputNode(const IGraphTransferOpsDefinitions& ops_definitions,
                          const ShapeRefiner& shape_refiner,
                          const Node& node);
 
   void RegisterGenericNode(const IGraphTransferOpsDefinitions& ops_definitions,
           const Node& node);
-
-  Status RegisterNodeIfAllInputsAreCached(
-      const IGraphTransferOpsDefinitions& ops_definitions,
-      const ShapeRefiner& shape_refiner, const Node& node,
-      const bool only_register_const_node,
-      const std::vector<std::pair<string, Tensor>>& input_node_info_list,
-      const std::vector<string>& output_node_names,
-      const TensorShapeMap& output_tensor_map);
 
   void AppendNodeParams(const string& name, const int id, const string& type,
                         const int type_id,
@@ -195,7 +170,6 @@ class GraphTransferer {
 
   GraphTransferInfo graph_transfer_info_{};
 
-  std::vector<const Node*> node_name_cache_list_{};
   std::unordered_map<string, int> node_name_to_id_cache_map_{};
   std::unordered_map<string, int> const_param_node_cache_map_{};
 

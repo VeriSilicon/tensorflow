@@ -881,21 +881,6 @@ Status GraphTransferer::LoadGraphFromProto(
     }
   }
 
-
-#if 0
-  for (const Node* const node : graph.nodes()) {
-    status = RegisterNodeIfAllInputsAreCached(
-        ops_definitions, shape_refiner, *node, false, input_node_info_list,
-        output_node_names, output_tensor_map);
-    if (!status.ok()) {
-      LOG(ERROR) << "Failed to transfer graph " << status;
-      return status;
-    }
-  }
-
-  SortParams(output_node_names);
-#endif
-
   for (const std::pair<string, Tensor>& input_node_info :
        input_node_info_list) {
     GraphTransferInfo::GraphInputNodeInfo& graph_input_node_info =
@@ -1033,34 +1018,6 @@ GraphTransferInfo& GraphTransferer::GetMutableGraphTransferInfo() {
   return graph_transfer_info_;
 }
 
-int GraphTransferer::CacheNode(const Node& node) {
-#if 0
-  if (node_name_to_id_cache_map_.count(node.name()) > 0) {
-    VLOG(1) << "Emplace node to cache failed";
-    // TODO(satok): check here?
-    return -1;
-  }
-  VLOG(1) << "Cache node: " << node.name() << ", " << node.op_def().name();
-  node_name_cache_list_.emplace_back(&node);
-  bool emplace_succeeded = false;
-  std::tie(std::ignore, emplace_succeeded) = node_name_to_id_cache_map_.emplace(
-      node.name(), node_name_cache_list_.size() - 1);
-  CHECK(emplace_succeeded);
-#endif
-  return node_name_cache_list_.size() - 1;
-}
-
-bool GraphTransferer::AreAllInputsCached(const Node& node) const {
-  for (const Node* const input_node : node.in_nodes()) {
-    if (node_name_to_id_cache_map_.count(input_node->name()) <= 0) {
-      VLOG(1) << "input_node " << input_node->name() << " of " << node.name()
-              << " is not cached yet.";
-      return false;
-    }
-  }
-  return true;
-}
-
 Status GraphTransferer::RegisterNode(
     const IGraphTransferOpsDefinitions& ops_definitions,
     const ShapeRefiner& shape_refiner,
@@ -1141,72 +1098,6 @@ void GraphTransferer::RegisterConstantNode(const Node& node) {
   const_node_info.add_shape(shape[3]);
 }
 
-int GraphTransferer::RegisterConstantShape(const std::vector<int>& shape) {
-  VLOG(1) << "Cache constant shape.";
-  // TODO: Handle non-4dim strides
-#if 0
-  CHECK_EQ(shape.size(), 4);
-  if (node_name_to_id_cache_map_.count(shape_name) <= 0) {
-    node_name_cache_list_.emplace_back(nullptr);
-    const int id = node_name_cache_list_.size() - 1;
-    node_name_to_id_cache_map_.emplace(shape_name, id);
-    GraphTransferInfo::ConstNodeInfo& const_node_info =
-        *graph_transfer_info_.add_const_node_info();
-    const_node_info.set_name(shape_name);
-    const_node_info.set_node_id(id);
-    // TODO(satok): Make this generic. Never assume rank is 5.
-    const_node_info.add_shape(static_cast<int64>(shape[0]));
-    const_node_info.add_shape(static_cast<int64>(shape[1]));
-    const_node_info.add_shape(static_cast<int64>(shape[2]));
-    const_node_info.add_shape(static_cast<int64>(shape[3]));
-  }
-  return node_name_to_id_cache_map_[shape_name];
-#endif
-  return 0;
-}
-
-bool GraphTransferer::HasPaddingAndStrides(const Node& node) {
-  return node.def().attr().count(PADDING_ATTR_NAME) > 0 &&
-         node.def().attr().count(STRIDES_ATTR_NAME) > 0;
-}
-
-bool GraphTransferer::IsNodeFlattenReshape(
-    const Node& node, const TensorShapeMap& output_tensor_map,
-    const ShapeRefiner& shape_refiner) {
-  // Check if node is reshape op
-  if (node.type_string() != RESHAPE_NODE_TYPE_STRING) {
-    return false;
-  }
-
-  shape_inference::InferenceContext* context = shape_refiner.GetContext(&node);
-  // Check if output count is valid
-  if (context->num_outputs() != 1) {
-    return false;
-  }
-
-  shape_inference::ShapeHandle shape_handle = context->output(0);
-  std::array<int64, SHAPE_ARRAY_SIZE> shape_array;
-  const shape_inference::DimensionHandle dim_handle =
-      context->NumElements(shape_handle);
-
-  // Obtain shape of output of node
-  if (context->ValueKnown(dim_handle)) {
-    shape_array = BuildShapeArray(shape_handle, context);
-  } else {
-    // Use output tensor for unknown shape
-    const TensorShape* shape;
-    CHECK(FindShapeType(output_tensor_map, node.name(), nullptr, &shape));
-    shape_array = ToTensorShapeArray(*shape);
-  }
-
-  // check if reshape op just does flatten
-  if (shape_array[0] == 1 && shape_array[1] == 1 && shape_array[2] == 1) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
 void GraphTransferer::RegisterInputNode(
     const IGraphTransferOpsDefinitions& ops_definitions,
     const ShapeRefiner& shape_refiner, const Node& node) {
@@ -1239,26 +1130,6 @@ void GraphTransferer::RegisterGenericNode(
       node, node.name(), id,
       op_type, op_type_id, node.num_inputs(),
       node.num_outputs(), true /* append_input */, true /* append_output */);
-}
-
-// TODO(satok): Remove this function.
-// TODO(satok): Remove only_register_const_node.
-Status GraphTransferer::RegisterNodeIfAllInputsAreCached(
-    const IGraphTransferOpsDefinitions& ops_definitions,
-    const ShapeRefiner& shape_refiner, const Node& node,
-    const bool only_register_const_node,
-    const std::vector<std::pair<string, Tensor>>& input_node_info_list,
-    const std::vector<string>& output_node_names,
-    const TensorShapeMap& output_tensor_map) {
-  return Status();
-#if 0
-  if (only_register_const_node && !node.IsConstant()) {
-    return Status();
-  }
-  CHECK(AreAllInputsCached(node));
-  return RegisterNode(ops_definitions, shape_refiner, output_tensor_map, node,
-                      input_node_info_list, output_node_names);
-#endif
 }
 
 // CAVEAT: Append inputs and outputs params accordingly
@@ -1538,7 +1409,6 @@ bool GraphTransferer::TransferParamsComparator::operator()(
 }
 
 void GraphTransferer::ClearCache() {
-  node_name_cache_list_.clear();
   node_name_to_id_cache_map_.clear();
   const_param_node_cache_map_.clear();
 }
@@ -1654,10 +1524,6 @@ void GraphTransferer::DumpVerificationStringOfNodeTransferParams() const {
   }
   LOG(INFO) << "Output params count = "
             << graph_transfer_info_.node_output_info_size();
-}
-
-bool GraphTransferer::GraphNodeMerge(){
-  return true;
 }
 
 }  // namespace tensorflow

@@ -129,6 +129,10 @@ int ovx_controller_read_attr(vsi_nn_node_t* node,
     case ATTR_LRN_DEPTH_RADIUS:
       node->nn_param.lrn.size = (uint32_t)((int32_t*)attr)[0];
       break;
+    case ATTR_POOL_TYPE:
+    case ATTR_CONV_RELU_POOL_POOL_TYPE:
+      //TODO: convert pool type to ovx pool type
+      break;
 
 
     // Const tensor
