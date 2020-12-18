@@ -35,6 +35,10 @@ class NnapiDelegateProvider : public DelegateProvider {
                              ToolParam::Create<bool>(false));
     default_params_.AddParam("nnapi_allow_fp16",
                              ToolParam::Create<bool>(false));
+    default_params_.AddParam("cache_model_dir",
+                             ToolParam::Create<std::string>(""));
+    default_params_.AddParam("cache_model_token",
+                             ToolParam::Create<std::string>(""));
   }
 
   std::vector<Flag> CreateFlags(ToolParams* params) const final;
@@ -60,7 +64,13 @@ std::vector<Flag> NnapiDelegateProvider::CreateFlags(ToolParams* params) const {
     CreateFlag<bool>("disable_nnapi_cpu", params,
                      "Disable the NNAPI CPU device"),
     CreateFlag<bool>("nnapi_allow_fp16", params,
-                     "Allow fp32 computation to be run in fp16")
+                     "Allow fp32 computation to be run in fp16"),
+    CreateFlag<std::string>(
+        "cache_model_dir", params,
+        "the file path to save cache model, it should be exit before."),
+    CreateFlag<std::string>(
+        "cache_model_token", params,
+        "the token of cache model, it identify the different cache model"),
   };
 
   return flags;
@@ -92,6 +102,14 @@ void NnapiDelegateProvider::LogParams(const ToolParams& params) const {
       TFLITE_LOG(INFO) << "Allow fp16 in NNAPI: ["
                        << params.Get<bool>("nnapi_allow_fp16") << "]";
     }
+    std::string cache_dir_log_string = "cache_model_dir: [" +
+                              params.Get<std::string>("cache_model_dir") +
+                             "]";
+    TFLITE_LOG(INFO) << cache_dir_log_string;
+    std::string cache_token_log_string = "cache_model_token: [" +
+                              params.Get<std::string>("cache_model_token") +
+                             "]";
+    TFLITE_LOG(INFO) << cache_token_log_string;
   }
 #endif
 }
@@ -111,6 +129,16 @@ TfLiteDelegatePtr NnapiDelegateProvider::CreateTfLiteDelegate(
 
     if (params.Get<bool>("nnapi_allow_fp16")) {
       options.allow_fp16 = true;
+    }
+
+    std::string cache_model_dir = params.Get<std::string>("cache_model_dir");
+    if (!cache_model_dir.empty()) {
+      options.cache_dir = cache_model_dir.c_str();
+    }
+
+    std::string cache_model_token = params.Get<std::string>("cache_model_token");
+    if (!cache_model_token.empty()) {
+      options.model_token = cache_model_token.c_str();
     }
 
     std::string string_execution_preference =
