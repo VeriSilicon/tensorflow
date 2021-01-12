@@ -86,7 +86,13 @@ TfLiteDelegatePtrMap GetDelegates(Settings* s) {
   }
 
   if (s->accel) {
-    auto delegate = evaluation::CreateNNAPIDelegate();
+    StatefulNnApiDelegate::Options options;
+    if(!s->cache_dir.empty() && !s->model_token.empty()){
+      options.cache_dir = s->cache_dir.c_str();
+      options.model_token = s->model_token.c_str();
+    }
+    auto delegate = evaluation::CreateNNAPIDelegate(options);
+
     if (!delegate) {
       LOG(INFO) << "NNAPI acceleration is unsupported on this platform.";
     } else {
@@ -375,6 +381,8 @@ void display_usage() {
       << "--verbose, -v: [0|1] print more information\n"
       << "--warmup_runs, -w: number of warmup runs\n"
       << "--xnnpack_delegate, -x [0:1]: xnnpack delegate\n"
+      << "--cache_dir, -z: save model cache location\n"
+      << "--model_token, -o: save model cache id"
       << "\n";
 }
 
@@ -402,13 +410,15 @@ int Main(int argc, char** argv) {
         {"gl_backend", required_argument, nullptr, 'g'},
         {"hexagon_delegate", required_argument, nullptr, 'j'},
         {"xnnpack_delegate", required_argument, nullptr, 'x'},
+        {"cache_dir", required_argument, nullptr, 'z'},
+        {"model_token", required_argument, nullptr, 'o'},
         {nullptr, 0, nullptr, 0}};
 
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
     c = getopt_long(argc, argv,
-                    "a:b:c:d:e:f:g:i:j:l:m:p:r:s:t:v:w:x:", long_options,
+                    "a:b:c:d:e:f:g:i:j:l:m:o:p:r:s:t:v:w:x:z:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -453,6 +463,9 @@ int Main(int argc, char** argv) {
       case 'm':
         s.model_name = optarg;
         break;
+      case 'o':
+        s.model_token = optarg;
+        break;
       case 'p':
         s.profiling =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
@@ -478,6 +491,9 @@ int Main(int argc, char** argv) {
         break;
       case 'x':
         s.xnnpack_delegate = optarg;
+        break;
+      case 'z':
+        s.cache_dir = optarg;
         break;
       case 'h':
       case '?':

@@ -146,6 +146,7 @@ Android --input_mean, -b: input mean --input_std, -s: input standard deviation
 -m: model_name.tflite --profiling, -p: [0|1], profiling or not --num_results,
 -r: number of results to show --threads, -t: number of threads --verbose, -v:
 [0|1] print more information --warmup_runs, -w: number of warmup runs
---xnnpack_delegate, -x [0:1]: xnnpack delegate`
+--xnnpack_delegate, -x [0:1]: xnnpack delegate --cache_dir, -z: location of model
+cache, --model_token, -o: identification of model cache `
 
 See the `label_image.cc` source code for other command line options.
