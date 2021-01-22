@@ -45,6 +45,7 @@ limitations under the License.
 #include "tensorflow/lite/profiling/profiler.h"
 #include "tensorflow/lite/string_util.h"
 #include "tensorflow/lite/tools/evaluation/utils.h"
+#include "tensorflow/lite/delegates/vx-delegate/delegate_main.h"
 
 #if defined(__ANDROID__)
 #include "tensorflow/lite/delegates/gpu/delegate.h"
@@ -74,8 +75,22 @@ TfLiteDelegatePtr CreateGPUDelegate(Settings* s) {
 #endif
 }
 
+TfLiteDelegatePtr CreateVxDelegate() {
+  auto vsi_delegate = ::vx::delegate::Delegate::Create();
+  return TfLiteDelegatePtr(vsi_delegate, [](TfLiteDelegate*) {});
+}
+
 TfLiteDelegatePtrMap GetDelegates(Settings* s) {
   TfLiteDelegatePtrMap delegates;
+  if(s->vx_delegate) {
+    auto delegate = CreateVxDelegate();
+    if (!delegate) {
+      LOG(INFO) << "vx-delegate backend is unsupported on this platform.";
+    } else {
+      delegates.emplace("vx-delegate", std::move(delegate));
+    }
+  }
+
   if (s->gl_backend) {
     auto delegate = CreateGPUDelegate(s);
     if (!delegate) {
@@ -375,6 +390,7 @@ void display_usage() {
       << "--verbose, -v: [0|1] print more information\n"
       << "--warmup_runs, -w: number of warmup runs\n"
       << "--xnnpack_delegate, -x [0:1]: xnnpack delegate\n"
+      << "--vx_delegate, -V [0:1]: vx delegate\n"
       << "\n";
 }
 
@@ -402,13 +418,15 @@ int Main(int argc, char** argv) {
         {"gl_backend", required_argument, nullptr, 'g'},
         {"hexagon_delegate", required_argument, nullptr, 'j'},
         {"xnnpack_delegate", required_argument, nullptr, 'x'},
-        {nullptr, 0, nullptr, 0}};
+        {"vx_delegate",required_argument, nullptr, 'V'},
+        {nullptr, 0, nullptr, 0},
+        };
 
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
     c = getopt_long(argc, argv,
-                    "a:b:c:d:e:f:g:i:j:l:m:p:r:s:t:v:w:x:", long_options,
+                    "a:b:c:d:e:f:g:i:j:l:m:p:r:s:t:v:w:x:V:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -478,6 +496,9 @@ int Main(int argc, char** argv) {
         break;
       case 'x':
         s.xnnpack_delegate = optarg;
+        break;
+      case 'V':
+        s.vx_delegate = strtol(optarg, nullptr, 10);
         break;
       case 'h':
       case '?':
