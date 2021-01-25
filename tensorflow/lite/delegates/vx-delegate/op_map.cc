@@ -55,6 +55,7 @@ limitations under the License.
 #include "tim/vx/ops/split.h"
 #include "tim/vx/ops/stridedslice.h"
 #include "tim/vx/ops/transpose.h"
+#include "tim/vx/ops/transposeconv.h"
 #include "utils.h"
 
 namespace {
@@ -1306,6 +1307,77 @@ struct LogicalOpMapper : public OpMapperBase<EmptyStructPlaceholder> {
   }
 };
 
+struct TransposeConvMapper
+    : public OpMapperBase<TfLiteTransposeConvParams,
+                          TransposeOutputAction<0, 2, 0, 1, 3>> {
+  virtual bool IsOpSupported(TfLiteContext* context,
+                             TfLiteNode* node,
+                             const TfLiteRegistration* registration) const {
+    auto kernel_tensor = context->tensors[node->inputs->data[1]];
+    if (kernel_tensor.quantization.type == kTfLiteAffineQuantization &&
+        reinterpret_cast<TfLiteAffineQuantization*>(
+            kernel_tensor.quantization.params)
+                ->scale->size > 1) {
+      LOG(INFO) << "per-channel input is not supported in transpose conv";
+      return false;
+    }
+    return true;
+  }
+  bool HandleMapOp(vx::delegate::Delegate* delegate,
+                   std::vector<std::shared_ptr<tim::vx::Tensor>>& inputs,
+                   std::vector<std::shared_ptr<tim::vx::Tensor>>& outputs,
+                   const void* params) override {
+    LOG(INFO) << "Create TransposeConv op";
+    auto transposed_tensor_spec = inputs[0]->GetSpec().AsTransientSpec();
+    const auto builtin =
+        reinterpret_cast<const TfLiteTransposeConvParams*>(params);
+    auto padding = TflitePadTypeToVsiPadType(builtin->padding);
+    auto stride_width = builtin->stride_width;
+    auto stride_height = builtin->stride_height;
+
+    std::vector<int32_t> output_shape(inputs[0]->GetShape()[0]);
+    inputs[0]->CopyDataFromTensor(output_shape.data());
+
+    uint32_t input_width = inputs[2]->GetShape()[1];
+    uint32_t input_height = inputs[2]->GetShape()[2];
+    uint32_t ksize_width = inputs[1]->GetShape()[1];
+    uint32_t ksize_height = inputs[1]->GetShape()[2];
+    uint32_t weights = inputs[1]->GetShape()[3];
+    int32_t pad_left_inter =
+        static_cast<int32_t>(ksize_width + stride_width * (input_width - 1) -
+                             output_shape[1]) / 2;
+    uint32_t pad_left = pad_left_inter > 0 ? pad_left_inter : 0;
+    uint32_t pad_right = pad_left;
+    int32_t pad_top_inter =
+        static_cast<int32_t>(ksize_height + stride_width * (input_height - 1) -
+                             output_shape[2]) / 2;
+    uint32_t pad_top = pad_top_inter > 0 ? pad_top_inter : 0;
+    uint32_t pad_bottom = pad_top;
+    std::array<uint32_t, 2> ksize{ksize_width, ksize_height};
+    std::array<uint32_t, 2> stride{stride_width, stride_height};
+    std::array<uint32_t, 4> pad{pad_left, pad_right, pad_top, pad_bottom};
+
+    auto input_data = TransposeInputTensor(delegate, inputs[1], {1, 2, 0, 3});
+    auto input_kernel = TransposeInputTensor(delegate, inputs[2], {1, 2, 0, 3});
+
+    auto op =
+        delegate->GetGraph()->CreateOperation<tim::vx::ops::TransposeConv>(
+            weights, padding, ksize, stride, pad);
+
+    std::vector<std::shared_ptr<tim::vx::Tensor>> input_tensor;
+    input_tensor.push_back(input_kernel);
+    input_tensor.push_back(input_data);
+    if (inputs.size() == 4) {
+      input_tensor.push_back(inputs[3]);
+    }
+    (*op).BindInputs(input_tensor);
+    (*op).BindOutputs(outputs);
+
+    delegate->GetOps().push_back(std::move(op));
+    return true;
+  }
+};
+
 using createIOpMapItemFunc = std::function<std::unique_ptr<IOpMapper>()>;
 static const std::map<int, createIOpMapItemFunc> reg = {
 #define REGISTER_OP_MAPPER(TFLITE_OP_CODE, MAPPER_TYPE, ...)                  \
@@ -1413,6 +1485,7 @@ static const std::map<int, createIOpMapItemFunc> reg = {
     REGISTER_OP_MAPPER(kTfLiteBuiltinLogicalOr,
                        LogicalOpMapper<tim::vx::ops::LogicalOr>,
                        "Or"),
+    REGISTER_OP_MAPPER(kTfLiteBuiltinTransposeConv, TransposeConvMapper),
 
 #undef REGISTER_OP_MAPPTER
 };
