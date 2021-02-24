@@ -42,6 +42,8 @@ struct Settings {
   int number_of_results = 5;
   int max_profiling_buffer_entries = 1024;
   int number_of_warmup_runs = 2;
+  string cache_dir;
+  string model_token;
 };
 
 }  // namespace label_image
