@@ -1125,7 +1125,20 @@ class NNAPIOpBuilder {
           TfLiteAffineQuantization* quantization_params =
               static_cast<TfLiteAffineQuantization*>(
                   tensor->quantization.params);
-          if (quantization_params->scale->size > 1 && nn_type != ANEURALNETWORKS_TENSOR_QUANT8_ASYMM) {
+
+          if (quantization_params->scale->size >
+              1) {
+            bool all_zp_equal_to_zero(true);
+            for (auto i = 0; i < quantization_params->zero_point->size; ++i) {
+              all_zp_equal_to_zero &=
+                  (0 == quantization_params->zero_point->data[i]);
+            }
+
+            if (!(tensor_type == kTfLiteInt8 && all_zp_equal_to_zero)) {
+              TFLITE_LOG(TFLITE_LOG_ERROR,
+                         "NNapi Cannot handle int8 asymmetric datatype");
+              return kTfLiteError;
+            }
             // Set up per-channel quantization.
             ann_perchannel_params = {
                 .channelDim = static_cast<uint32_t>(
