@@ -1866,6 +1866,12 @@ bool NNAPIDelegateKernel::Validate(
       Expect(node->inputs->size >= 2,
              NNAPIValidationFailureType::kMissingRequiredOperand,
              "Expected at least 2 inputs", &val_ctx);
+#ifdef __ANDROID__
+      const auto& input = context->tensors[node->inputs->data[0]];
+      Expect(input.dims->size <= 4,
+             NNAPIValidationFailureType::kUnsupportedOperandRank,
+             "Input rank should be <= 4", &val_ctx);
+#endif
       if (node->inputs->size >= 2) {
         Expect(context->tensors[node->inputs->data[1]].allocation_type ==
                    kTfLiteMmapRo,
