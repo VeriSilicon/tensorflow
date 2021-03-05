@@ -461,6 +461,13 @@ typedef struct {
   int body_subgraph_index;
 } TfLiteWhileParams;
 
+typedef struct {
+  size_t length;
+  size_t input_count;
+  size_t output_cout;
+  char *binary;
+} TfLiteVsiNpuParams;
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

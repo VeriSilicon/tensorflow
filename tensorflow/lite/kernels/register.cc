@@ -27,7 +27,7 @@ TfLiteRegistration* Register_NUMERIC_VERIFY();
 TfLiteRegistration* Register_AUDIO_SPECTROGRAM();
 TfLiteRegistration* Register_MFCC();
 TfLiteRegistration* Register_DETECTION_POSTPROCESS();
-
+TfLiteRegistration* Register_VSI_NPU_PRECOMPILED();
 }  // namespace custom
 
 namespace builtin {
@@ -300,6 +300,8 @@ BuiltinOpResolver::BuiltinOpResolver() {
             tflite::ops::custom::Register_AUDIO_SPECTROGRAM());
   AddCustom("TFLite_Detection_PostProcess",
             tflite::ops::custom::Register_DETECTION_POSTPROCESS());
+  AddCustom("vsi-npu",
+            tflite::ops::custom::Register_VSI_NPU_PRECOMPILED());
 }
 
 }  // namespace builtin
