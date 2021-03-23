@@ -78,6 +78,65 @@ std::vector<T> TransposeVec(const std::vector<T>& input,
   return output;
 }
 
+int32_t GetWeihtSizeForBilinear(int32_t scale) { return 2 * scale - scale % 2; }
+
+int32_t GetPadSizeForBilinear(int32_t scale) { return scale / 2; }
+
+void GenerateWeightsDataForBilinear(float* data,
+                                    const std::vector<int>& weight_shape,
+                                    int32_t scale_w,
+                                    int32_t scale_h) {
+  int32_t width = weight_shape[0];
+  int32_t height = weight_shape[1];
+  int32_t channel_in = weight_shape[2];
+  int32_t channel_out = weight_shape[3];
+  for (int o = 0; o < channel_out; o++) {
+    for (int h = 0; h < height; h++) {
+      float center_w = width % 2 == 1 ? scale_w - 1.0 : scale_w - 0.5;
+      float center_h = height % 2 == 1 ? scale_h - 1.0 : scale_h - 0.5;
+
+      for (int w = 0; w < width; w++) {
+        data[o * (channel_in + 1) * width * height + h * width + w] =
+            (1 - std::abs(w - center_w) / scale_w) *
+            (1 - std::abs(h - center_h) / scale_h);
+      }
+    }
+  }
+
+  return;
+}
+
+void GenerateWeightDataForNearest(float* data,
+                                  const std::vector<int>& weight_shape) {
+  int32_t width = weight_shape[0];
+  int32_t height = weight_shape[1];
+  int32_t channel_in = weight_shape[2];
+  int32_t channel_out = weight_shape[3];
+
+  for (int o = 0; o < channel_out; o++) {
+    for (int h = 0; h < height; h++) {
+      for (int w = 0; w < width; w++) {
+        data[o * (channel_in + 1) * width * height + h * width + w] = 1;
+      }
+    }
+  }
+
+  return;
+}
+
+template <typename T>
+inline std::vector<T> Quantize(const std::vector<float>& data, float scale,
+                               int32_t zero_point) {
+  std::vector<T> q;
+  for (const auto& f : data) {
+    q.push_back(static_cast<T>(std::max<float>(
+        std::numeric_limits<T>::min(),
+        std::min<float>(std::numeric_limits<T>::max(),
+                        std::round(zero_point + (f / scale))))));
+  }
+  return q;
+}
+
 }  // namespace utils
 }  // namespace delegate
 }  // namespace vx
