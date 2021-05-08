@@ -29,6 +29,6 @@ if(NOT TIM_VX_INSTALL OR NOT EXISTS ${TIM_VX_INSTALL})
   message(FATAL_ERROR "Set TIM_VX_INSTALL to tim-vx install folder(by make install) instead of ${TIM_VX_INSTALL}")
 endif()
 
-message(${TIM_VX_INSTALL})
+message("=== Building with TIM_VX_LIBRIRIES from ${TIM_VX_INSTALL}")
 include_directories(${TIM_VX_INSTALL}/include)
 list(APPEND TFLITE_DELEGATES_VX_DEPENDENCIES ${TIM_VX_INSTALL}/lib/libtim-vx.so)
