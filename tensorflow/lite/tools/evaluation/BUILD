@@ -39,6 +39,7 @@ cc_library(
     srcs = ["utils.cc"],
     hdrs = ["utils.h"],
     copts = tflite_copts(),
+    defines = ["TFLITE_WITH_VX"],
     deps = [
         "//tensorflow/lite/c:common",
         "//tensorflow/lite/delegates/nnapi:nnapi_delegate",

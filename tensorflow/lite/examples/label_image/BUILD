@@ -19,6 +19,7 @@ cc_binary(
         "get_top_n_impl.h",
         "label_image.cc",
     ],
+    defines = ["TFLITE_WITH_VX"],
     linkopts = tflite_linkopts() + select({
         "//tensorflow:android": [
             "-pie",  # Android 5.0 and later supports only PIE
