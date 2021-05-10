@@ -129,13 +129,6 @@ std::shared_ptr<tim::vx::Tensor> TransposeInputTensor(
     const std::shared_ptr<tim::vx::Tensor>& original_tensor,
     const std::vector<uint32_t>& perm) {
   auto transposed_tensor_spec = original_tensor->GetSpec().AsTransientSpec();
-  if (transposed_tensor_spec.quantization_.Type() ==
-      tim::vx::QuantType::SYMMETRIC_PER_CHANNEL) {
-    int32_t new_channel_dim = vx::delegate::utils::TransposeChannelDim(
-        perm, transposed_tensor_spec.quantization_.ChannelDim());
-    transposed_tensor_spec.quantization_.SetChannelDim(new_channel_dim);
-  }
-
   auto transposed_tensor =
       delegate->GetGraph()->CreateTensor(transposed_tensor_spec);
 
@@ -483,11 +476,7 @@ struct SimpleOpMapper : public OpMapperBase<EmptyStructPlaceholder> {
 
 template <typename T_OperationType, typename T_Param>
 struct SimpleOpWithFusedActiovationMapper
-    : public OpMapperBase<T_Param,
-                          TransposeInputAction<0, 1, 2, 0, 3>,
-                          TransposeInputAction<1, 1, 2, 0, 3>,
-                          FusedActivationAction<0, T_Param>,
-                          TransposeOutputAction<0, 2, 0, 1, 3>> {
+    : public OpMapperBase<T_Param, FusedActivationAction<0, T_Param>> {
   std::string name_;
 
   SimpleOpWithFusedActiovationMapper(std::string name) : name_(name) {}
@@ -508,11 +497,8 @@ struct SimpleOpWithFusedActiovationMapper
 };
 
 template <typename T_Param>
-struct Conv2dKind : public OpMapperBase<T_Param,
-                                        TransposeInputAction<0, 1, 2, 0, 3>,
-                                        FusedActivationAction<0, T_Param>,
-                                        TransposeOutputAction<0, 2, 0, 1, 3>> {
-};
+struct Conv2dKind
+    : public OpMapperBase<T_Param, FusedActivationAction<0, T_Param>> {};
 
 struct FullyConnectedMapper
     : public OpMapperBase<
@@ -628,14 +614,8 @@ struct Conv2dMapper : public Conv2dKind<TfLiteConvParams> {
     const auto builtin = reinterpret_cast<const TfLiteConvParams*>(params);
 
     uint32_t weights = inputs[1]->GetShape()[3];
-    uint32_t kernel_h = inputs[1]->GetShape()[1];
-    uint32_t kernel_w = inputs[1]->GetShape()[0];
-    if (!inputs[1]->IsConstTensor()) {
-      weights = inputs[1]->GetShape()[3];
-      kernel_h = inputs[1]->GetShape()[2];
-      kernel_w = inputs[1]->GetShape()[1];
-      inputs[1] = TransposeInputTensor(delegate, inputs[1], {1, 2, 0, 3});
-    }
+    uint32_t kernel_h = inputs[1]->GetShape()[2];
+    uint32_t kernel_w = inputs[1]->GetShape()[1];
 
     auto op = delegate->GetGraph()->CreateOperation<tim::vx::ops::Conv2d>(
         static_cast<int32_t>(weights),
@@ -644,7 +624,9 @@ struct Conv2dMapper : public Conv2dKind<TfLiteConvParams> {
         std::array<uint32_t, 2>(
             {builtin->stride_width, builtin->stride_height}),
         std::array<uint32_t, 2>(
-            {builtin->dilation_width_factor, builtin->dilation_height_factor}));
+            {builtin->dilation_width_factor, builtin->dilation_height_factor}),
+        0,
+        tim::vx::DataLayout::CWHN);
 
     (*op).BindInputs(inputs);
     (*op).BindOutputs(outputs);
@@ -779,15 +761,9 @@ struct DepthwiseConv2dMapper : public Conv2dKind<TfLiteDepthwiseConvParams> {
     const auto builtin =
         reinterpret_cast<const TfLiteDepthwiseConvParams*>(params);
 
-    uint32_t weights = inputs[1]->GetShape()[2];
-    uint32_t kernel_h = inputs[1]->GetShape()[1];
-    uint32_t kernel_w = inputs[1]->GetShape()[0];
-    if (!inputs[1]->IsConstTensor()) {
-      weights = inputs[1]->GetShape()[0];
-      kernel_h = inputs[1]->GetShape()[2];
-      kernel_w = inputs[1]->GetShape()[1];
-      inputs[1] = TransposeInputTensor(delegate, inputs[1], {1, 2, 0, 3});
-    }
+    uint32_t weights = inputs[1]->GetShape()[0];
+    uint32_t kernel_h = inputs[1]->GetShape()[2];
+    uint32_t kernel_w = inputs[1]->GetShape()[1];
 
     auto op = delegate->GetGraph()->CreateOperation<tim::vx::ops::Conv2d>(
         static_cast<int32_t>(weights),
@@ -797,7 +773,7 @@ struct DepthwiseConv2dMapper : public Conv2dKind<TfLiteDepthwiseConvParams> {
             {builtin->stride_width, builtin->stride_height}),
         std::array<uint32_t, 2>(
             {builtin->dilation_width_factor, builtin->dilation_height_factor}),
-        builtin->depth_multiplier);
+        builtin->depth_multiplier, tim::vx::DataLayout::CWHN);
 
     (*op).BindInputs(inputs);
     (*op).BindOutputs(outputs);
@@ -1865,6 +1841,8 @@ static const std::map<int, createIOpMapItemFunc> reg = {
         kTfLiteBuiltinReluN1To1, SimpleOpMapper<tim::vx::ops::Relu1>, "Relu1"),
     REGISTER_OP_MAPPER(
         kTfLiteBuiltinRelu6, SimpleOpMapper<tim::vx::ops::Relu6>, "Relu6"),
+    REGISTER_OP_MAPPER(
+        kTfLiteBuiltinLogistic, SimpleOpMapper<tim::vx::ops::Sigmoid>, "Sigmoid"),
     REGISTER_OP_MAPPER(kTfLiteBuiltinTranspose, Transpose),
     REGISTER_OP_MAPPER(
         kTfLiteBuiltinNeg, SimpleOpMapper<tim::vx::ops::Neg>, "Neg"),
