@@ -29,6 +29,17 @@ if(NOT TIM_VX_INSTALL OR NOT EXISTS ${TIM_VX_INSTALL})
   message(FATAL_ERROR "Set TIM_VX_INSTALL to tim-vx install folder(by make install) instead of ${TIM_VX_INSTALL}")
 endif()
 
-message("=== Building with TIM_VX_LIBRIRIES from ${TIM_VX_INSTALL}")
+if(NOT EXTERNAL_VIV_SDK OR NOT EXISTS ${EXTERNAL_VIV_SDK})
+  message(FATAL_ERROR "Set EXTERNAL_VIV_SDK to openvx driver sdk folder")
+endif()
+
+message("=== Building with TIM_VX_LIBRIRIES from ${TIM_VX_INSTALL} ===")
 include_directories(${TIM_VX_INSTALL}/include)
 list(APPEND TFLITE_DELEGATES_VX_DEPENDENCIES ${TIM_VX_INSTALL}/lib/libtim-vx.so)
+# TODO(Sven): Fixme
+if( EXISTS ${EXTERNAL_VIV_SDK}/drivers)
+  list(APPEND TFLITE_DELEGATES_VX_DEPENDENCIES ${EXTERNAL_VIV_SDK}/drivers/libOpenVX.so)
+endif()
+if( EXISTS ${EXTERNAL_VIV_SDK}/lib)
+  list(APPEND TFLITE_DELEGATES_VX_DEPENDENCIES ${EXTERNAL_VIV_SDK}/lib/libOpenVX.so)
+endif()
