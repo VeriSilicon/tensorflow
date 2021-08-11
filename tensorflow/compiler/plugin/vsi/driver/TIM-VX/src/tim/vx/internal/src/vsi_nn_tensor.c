@@ -575,20 +575,25 @@ vsi_nn_tensor_t * vsi_nn_CreateTensorWithDefault
         data = (uint8_t *)malloc( size );
         if( data )
         {
-            uint32_t i = 0;
+            uint32_t i = 0, j = 0;
             uint32_t elements = size / stride[0];
-            vsi_status status = VSI_SUCCESS;
+            vsi_status status = VSI_FAILURE;
 
-            for( i = 0; i < elements; i ++ )
+            status = vsi_nn_Float32ToDtype( defualt_value, &data[0], &t->attr.dtype );
+            if(stride[0] == 1)
             {
-                status = vsi_nn_Float32ToDtype( defualt_value, &data[stride[0] * i], &t->attr.dtype );
-                if( VSI_FAILURE == status )
+                 memset(data, data[0], size);
+            }
+            else
+            {
+                for( i = 1; i < elements; i ++ )
                 {
-                    VSILOGE("Convert default_value to dtype fail");
-                    break;
+                    for(j=0;j<stride[0];j++)
+                    {
+                        data[stride[0] * i + j] = data[j];
+                    }
                 }
             }
-
             status = vsi_nn_CopyDataToTensor( graph, t, data );
             free( data );
             data = NULL;
@@ -621,19 +626,24 @@ vsi_status vsi_nn_FillTensorWithValue
         data = (uint8_t *)malloc( size );
         if( data )
         {
-            uint32_t i = 0;
+            uint32_t i = 0, j = 0;
             uint32_t elements = size / stride[0];
+            status = vsi_nn_Float32ToDtype( value, &data[0], &tensor->attr.dtype );
 
-            for( i = 0; i < elements; i ++ )
+            if(stride[0] == 1)
             {
-                status = vsi_nn_Float32ToDtype( value, &data[stride[0] * i], &tensor->attr.dtype );
-                if( VSI_FAILURE == status )
+                 memset(data, data[0], size);
+            }
+            else
+            {
+                for( i = 1; i < elements; i ++ )
                 {
-                    VSILOGE("Convert value to dtype fail");
-                    break;
+                    for(j=0;j<stride[0];j++)
+                    {
+                        data[stride[0] * i + j] = data[j];
+                    }
                 }
             }
-
             status = vsi_nn_CopyDataToTensor( graph, tensor, data );
             free( data );
             data = NULL;
@@ -844,7 +854,7 @@ float * vsi_nn_ConvertTensorToFloat32Data
 
     if( !tensor->attr.is_created_from_handle )
     {
-        if(tensor_data)free(tensor_data);
+        vsi_nn_safe_free( tensor_data );
     }
     return data;
 } /* vsi_nn_ConvertTensorToFloat32Data() */
@@ -1075,6 +1085,11 @@ void vsi_nn_SaveTensorToTextByFp32
     }
 
     fp = fopen( filename, "w" );
+    if( NULL == fp )
+    {
+        VSILOGW( "Write file %s fail. Please check...", filename );
+        return;
+    }
     sz = vsi_nn_GetElementNum( tensor );
 
     ptr = data;
@@ -1095,7 +1110,7 @@ void vsi_nn_SaveTensorToTextByFp32
     }
     fwrite( buf, count, 1, fp );
     fclose( fp );
-    free( data );
+    vsi_nn_safe_free( data );
 } /* vsi_nn_SaveTensorToTextByFp32() */
 
 void vsi_nn_SaveTensorToText
@@ -1124,7 +1139,7 @@ void vsi_nn_SaveTensorToText
     sz = vsi_nn_GetElementNum( tensor );
     vsi_nn_SaveDataToText( filename, data, sz,
         tensor->attr.dtype.vx_type, seperator );
-    free( data );
+    vsi_nn_safe_free( data );
 } /* vsi_nn_SaveTensorToText() */
 
 void vsi_nn_SaveDataToText
@@ -1160,6 +1175,11 @@ void vsi_nn_SaveDataToText
     }
 
     fp = fopen( filename, "w" );
+    if( NULL == fp )
+    {
+        VSILOGW( "Write file %s fail. Please check...", filename );
+        return;
+    }
     type_bytes = vsi_nn_GetTypeBytes( type );
 
     count = 0;
@@ -1212,6 +1232,11 @@ void vsi_nn_SaveTensorToBinary
     }
 
     fp = fopen( filename, "wb" );
+    if( NULL == fp )
+    {
+        VSILOGW( "Write file %s fail. Please check...", filename );
+        return;
+    }
     sz = vsi_nn_GetTypeBytes( tensor->attr.dtype.vx_type );
     for( i = 0; i < tensor->attr.dim_num; i ++ )
     {
@@ -1219,7 +1244,7 @@ void vsi_nn_SaveTensorToBinary
     }
     fwrite( data, sz, 1, fp );
     fclose( fp );
-    free( data );
+    vsi_nn_safe_free( data );
 } /* vsi_nn_SaveTensorToBinary() */
 
 vsi_nn_tensor_t * vsi_nn_CreateTensorFromData
@@ -1539,7 +1564,7 @@ void vsi_nn_TransposeTensor
         VSILOGE( "Copy transpose data fail with code %#x.", status );
     }
 
-    free( buf );
+    vsi_nn_safe_free( buf );
     free( dst );
 } /* vsi_nn_TransposeTensor() */
 
@@ -1588,7 +1613,7 @@ void vsi_nn_PermuteTensor
         if( perm[i] >= dim_num )
         {
             VSILOGW( "Incorrect perm %d", perm[i] );
-            if( buf ) { free(buf); buf = NULL; }
+            vsi_nn_safe_free( buf );
             if( dst ) { free(dst); dst = NULL; }
             return;
         }
@@ -1603,7 +1628,7 @@ void vsi_nn_PermuteTensor
         VSILOGE( "Copy permute data fail with code %#x.", status );
     }
 
-    if( buf ) { free(buf); buf = NULL; }
+    vsi_nn_safe_free( buf );
     if( dst ) { free(dst); dst = NULL; }
 } /* vsi_nn_PermuteTensor() */
 
@@ -2241,7 +2266,7 @@ void vsi_nn_reshuffle_weight_data
     }
     vsi_nn_CopyDataToTensor( graph, weights, weight_data );
     vsi_nn_Free( buffer );
-    vsi_nn_Free( weight_data );
+    vsi_nn_safe_free( weight_data );
 }
 
 vsi_nn_tensor_t* vsi_nn_ConcatTensor_impl

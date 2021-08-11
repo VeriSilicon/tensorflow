@@ -29,9 +29,18 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## GatherNd
+ *
+ * An operation similar to Gather but gathers across multiple axis at once.
+ */
+
 class GatherNd : public Operation {
  public:
   GatherNd(Graph* Graph);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
+
 };
 
 }  // namespace ops

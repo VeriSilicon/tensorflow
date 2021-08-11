@@ -1,0 +1,187 @@
+#pragma OPENCL EXTENSION cl_viv_vx_extension : enable
+
+#include "cl_viv_vx_ext.h"
+
+_viv_uniform int padChn;
+_viv_uniform int padTop;
+_viv_uniform int padLeft;
+_viv_uniform int in_chn_num;
+_viv_uniform int out_chn_num;
+_viv_uniform int padConstVal;
+_viv_uniform VXC_512Bits uniExtract1Int32toInt16_2x8;
+
+__kernel void vxcTensorPad2_Const16Bits_chn(
+    image2d_array_t input,
+    int constData,
+    image2d_array_t output)
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn_num;
+    int bid = gidz / (short)out_chn_num;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+
+    int inc = cid - padChn;
+
+    if(inc >=0 && inc < in_chn_num)
+    {
+        int4 coord_in = (int4)(gidx, gidy, inc + bid * in_chn_num, 0);
+        vxc_short8 src0, src1, src2, src3;
+        VXC_ReadImage2DArray(src0, input, coord_in, VXC_5BITOFFSET_XY(0, 0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src1, input, coord_in, VXC_5BITOFFSET_XY(0, 1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src2, input, coord_in, VXC_5BITOFFSET_XY(0, 2), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src3, input, coord_in, VXC_5BITOFFSET_XY(0, 3), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src2, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src3, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    }
+    else
+    {
+        vxc_short8 src0;
+        VXC_DP2x8(src0, padConstVal, padConstVal, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), uniExtract1Int32toInt16_2x8);
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    }
+}
+__kernel void vxcTensorPad2_Const8Bits_chn(
+    image2d_array_t input,
+    int constData,
+    image2d_array_t output)
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn_num;
+    int bid = gidz / (short)out_chn_num;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+
+    int inc = cid - padChn;
+
+    if(inc >=0 && inc < in_chn_num)
+    {
+        int4 coord_in = (int4)(gidx, gidy, inc + bid * in_chn_num, 0);
+        vxc_char16 src0, src1, src2, src3;
+        VXC_ReadImage2DArray(src0, input, coord_in, VXC_5BITOFFSET_XY(0, 0), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src1, input, coord_in, VXC_5BITOFFSET_XY(0, 1), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src2, input, coord_in, VXC_5BITOFFSET_XY(0, 2), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src3, input, coord_in, VXC_5BITOFFSET_XY(0, 3), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src1, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src2, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src3, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+    }
+    else
+    {
+        vxc_char16 src0;
+        VXC_DP2x8(src0, padConstVal, padConstVal, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), uniExtract1Int32toInt16_2x8);
+        VXC_DP2x8(src0, padConstVal, padConstVal, VXC_MODIFIER(8, 15, 0, VXC_RM_ToNearestEven, 1), uniExtract1Int32toInt16_2x8);
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+    }
+}
+
+__kernel void vxcTensorPad2_Const16Bits_whc(
+    image2d_array_t input,
+    int constData,
+    image2d_array_t output)
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn_num;
+    int bid = gidz / (short)out_chn_num;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+
+    int inc = cid - padChn;
+
+    if(inc >=0 && inc < in_chn_num)
+    {
+        int4 coord_in = (int4)(gidx - padLeft, gidy - padTop, inc + bid * in_chn_num, 0);
+        vxc_short8 src0, src1, src2, src3;
+        VXC_ReadImage2DArray(src0, input, coord_in, VXC_5BITOFFSET_XY(0, 0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src1, input, coord_in, VXC_5BITOFFSET_XY(0, 1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src2, input, coord_in, VXC_5BITOFFSET_XY(0, 2), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src3, input, coord_in, VXC_5BITOFFSET_XY(0, 3), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src2, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src3, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    }
+    else
+    {
+        vxc_short8 src0;
+        VXC_DP2x8(src0, padConstVal, padConstVal, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), uniExtract1Int32toInt16_2x8);
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    }
+}
+__kernel void vxcTensorPad2_Const8Bits_whc(
+    image2d_array_t input,
+    int constData,
+    image2d_array_t output)
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn_num;
+    int bid = gidz / (short)out_chn_num;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+
+    int inc = cid - padChn;
+
+    if(inc >=0 && inc < in_chn_num)
+    {
+        int4 coord_in = (int4)(gidx - padLeft, gidy - padTop, inc + bid * in_chn_num, 0);
+        vxc_char16 src0, src1, src2, src3;
+        VXC_ReadImage2DArray(src0, input, coord_in, VXC_5BITOFFSET_XY(0, 0), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src1, input, coord_in, VXC_5BITOFFSET_XY(0, 1), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src2, input, coord_in, VXC_5BITOFFSET_XY(0, 2), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_ReadImage2DArray(src3, input, coord_in, VXC_5BITOFFSET_XY(0, 3), VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src1, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src2, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src3, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+    }
+    else
+    {
+        vxc_char16 src0;
+        VXC_DP2x8(src0, padConstVal, padConstVal, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), uniExtract1Int32toInt16_2x8);
+        VXC_DP2x8(src0, padConstVal, padConstVal, VXC_MODIFIER(8, 15, 0, VXC_RM_ToNearestEven, 1), uniExtract1Int32toInt16_2x8);
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+        coord_out.y++;
+        VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+    }
+}

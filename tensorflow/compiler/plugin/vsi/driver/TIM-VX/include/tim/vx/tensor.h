@@ -74,7 +74,7 @@ class Quantization {
 
  protected:
   QuantType type_{QuantType::NONE};
-  int32_t channel_dim_;
+  int32_t channel_dim_{-1};
   std::vector<float> scales_;
   std::vector<int32_t> zero_points_;
 };
@@ -88,6 +88,21 @@ struct TensorSpec {
              const Quantization& quantization)
       : TensorSpec(datatype, shape, attr) {
     this->quantization_ = quantization;
+  }
+
+  TensorSpec(const TensorSpec& other) {
+	  this->datatype_ = other.datatype_;
+	  this->shape_ = other.shape_;
+	  this->attr_ = other.attr_;
+	  this->quantization_  = other.quantization_;
+  }
+
+  TensorSpec& operator =(const TensorSpec& other) {
+    this->datatype_ = other.datatype_;
+	  this->shape_ = other.shape_;
+	  this->attr_ = other.attr_;
+	  this->quantization_  = other.quantization_;
+    return *this;
   }
 
   TensorSpec& SetDataType(DataType datatype) {
@@ -127,12 +142,13 @@ class Tensor {
   virtual const ShapeType& GetShape() = 0;
   virtual DataType GetDataType() = 0;
   virtual const Quantization& GetQuantization() = 0;
-  virtual const TensorSpec& GetSpec() = 0;
+  virtual TensorSpec& GetSpec() = 0;
   virtual uint32_t GetId() = 0;
-  virtual bool CopyDataToTensor(const void* data, uint32_t size = 0) = 0;
+  virtual bool CopyDataToTensor(const void* data, uint32_t size_in_bytes = 0) = 0;
   virtual bool CopyDataFromTensor(void* data) = 0;
   virtual bool IsPlaceHolder() = 0;
   virtual bool IsConstTensor() = 0;
+  virtual const void* GetDataRef() const = 0;
 };
 
 }  // namespace vx

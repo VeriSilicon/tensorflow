@@ -241,6 +241,31 @@ static void _set_preproc_node_input_attr
             input_attr->size[2] = 1;
         }
     }
+
+    if(*source_format == VSI_NN_SOURCE_FORMAT_IMAGE_RGB888_PLANAR || *source_format == VSI_NN_SOURCE_FORMAT_IMAGE_GRAY)
+    {
+        if(*source_layout == VSI_NN_SOURCE_LAYOUT_NHWC)
+        {
+            input_attr->size[0] = input_size->w;
+            input_attr->size[1] = input_size->h;
+            input_attr->size[2] = input_size->c;
+        }
+    }
+
+    if(*source_format == VSI_NN_SOURCE_FORMAT_IMAGE_BGRA)
+    {
+        if(*source_layout == VSI_NN_SOURCE_LAYOUT_NHWC)
+        {
+            input_attr->size[0] = 4*input_attr->size[1];
+            input_attr->size[1] = input_attr->size[2];
+            input_attr->size[2] = 1;
+        }
+        else
+        {
+            input_attr->size[0] = 4*input_attr->size[0];
+            input_attr->size[2] = 1;
+        }
+    }
 } /*_set_preproc_node_input_attr() */
 
 static void _set_preproc_node_output_attr
@@ -483,6 +508,7 @@ vsi_status vsi_nn_add_single_postproc_node
     )
 {
     vsi_nn_node_t* node;
+    vsi_nn_node_t** consume_nodes = NULL;
     vsi_nn_process_permute_t* permute = NULL;
     vsi_nn_tensor_t* org_norm_tensor = NULL;
     vsi_nn_tensor_attr_t  input_attr;
@@ -490,8 +516,10 @@ vsi_status vsi_nn_add_single_postproc_node
     vsi_nn_tensor_id_t postproc_input;
     vsi_nn_tensor_id_t postproc_output;
     vsi_nn_postprocess_dtype_convert_t* dtype_convert = NULL;
-    int32_t i = 0;
+    uint32_t i = 0;
+    uint32_t j = 0;
     int32_t idx = 0;
+    uint32_t nodes_count = 0;
     vsi_status status = VSI_SUCCESS;
 
     org_norm_tensor = vsi_nn_GetTensor(graph, graph->output.tensors[output_idx]);
@@ -536,10 +564,29 @@ vsi_status vsi_nn_add_single_postproc_node
     postproc_input = vsi_nn_AddTensor(graph, VSI_NN_TENSOR_ID_AUTO, &input_attr, NULL);
     postproc_output = vsi_nn_AddTensor(graph, VSI_NN_TENSOR_ID_AUTO, &output_attr, NULL);
 
+    /* Get origin norm tensor comsume nodes and connect its' comsume nodes */
+    vsi_nn_get_tensor_consumers(graph, graph->output.tensors[output_idx], NULL, &nodes_count);
+    if(nodes_count != 0)
+    {
+        consume_nodes = (vsi_nn_node_t**)malloc(sizeof(vsi_nn_node_t*)*nodes_count);
+        vsi_nn_get_tensor_consumers(graph, graph->output.tensors[output_idx], consume_nodes, NULL);
+        for(i = 0; i < nodes_count; i++)
+            {
+                for(j = 0; j < consume_nodes[i]->input.num; j++)
+                    {
+                        if(consume_nodes[i]->input.tensors[j] == graph->output.tensors[output_idx])
+                        {
+                            consume_nodes[i]->input.tensors[j] = postproc_input;
+                            break;
+                        }
+                    }
+            }
+    }
+
     /* Reconnect node tensors */
     node->input.tensors[0] = postproc_input;
     node->output.tensors[0] = postproc_output;
-    for(i = 0; i < (int32_t)last_node->output.num; i++)
+    for(i = 0; i < last_node->output.num; i++)
     {
         if(last_node->output.tensors[i] == graph->output.tensors[output_idx])
         {
@@ -549,7 +596,13 @@ vsi_status vsi_nn_add_single_postproc_node
     }
     graph->output.tensors[output_idx] = postproc_output;
 
+
 final:
+    if(consume_nodes)
+    {
+        free(consume_nodes);
+        consume_nodes = NULL;
+    }
     return status;
 } /* vsi_nn_add_single_postproc_node() */
 

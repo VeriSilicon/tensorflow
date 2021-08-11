@@ -30,34 +30,33 @@ namespace tim {
 namespace vx {
 namespace ops {
 
-#define DEFINE_ELEMENTWISE_UNARY_OP(NAME, VSI_OP_CODE) \
-  NAME::NAME(Graph* graph) : Operation(graph, VSI_OP_CODE) {}
+#define DEFINE_ELEMENTWISE_OP(NAME, VSI_OP_CODE)                        \
+  NAME::NAME(Graph* graph) : Operation(graph, VSI_OP_CODE, 2, 1) {}     \
+  std::shared_ptr<Operation> NAME::Clone(std::shared_ptr<Graph>& graph) \
+      const {                                                           \
+    return graph->CreateOperation<NAME>();                              \
+  }
 
-DEFINE_ELEMENTWISE_UNARY_OP(Abs, VSI_NN_OP_ABS);
-DEFINE_ELEMENTWISE_UNARY_OP(Sin, VSI_NN_OP_SIN);
-// TODO(jiangbo): enable it when ovxlib supports `Cos`
-//DEFINE_ELEMENTWISE_UNARY_OP(Cos, VSI_NN_OP_COS);
-DEFINE_ELEMENTWISE_UNARY_OP(Exp, VSI_NN_OP_EXP);
-DEFINE_ELEMENTWISE_UNARY_OP(Log, VSI_NN_OP_LOG);
-DEFINE_ELEMENTWISE_UNARY_OP(Sqrt, VSI_NN_OP_SQRT);
-DEFINE_ELEMENTWISE_UNARY_OP(Rsqrt, VSI_NN_OP_RSQRT);
-DEFINE_ELEMENTWISE_UNARY_OP(Square, VSI_NN_OP_SQUARE);
-DEFINE_ELEMENTWISE_UNARY_OP(LogicalNot, VSI_NN_OP_LOGICAL_NOT);
+DEFINE_ELEMENTWISE_OP(Minimum, VSI_NN_OP_MINIMUM)
+DEFINE_ELEMENTWISE_OP(Maximum, VSI_NN_OP_MAXIMUM)
+DEFINE_ELEMENTWISE_OP(Add, VSI_NN_OP_ADD)
+DEFINE_ELEMENTWISE_OP(Sub, VSI_NN_OP_SUBTRACT)
+DEFINE_ELEMENTWISE_OP(Div, VSI_NN_OP_DIVIDE)
+DEFINE_ELEMENTWISE_OP(Pow, VSI_NN_OP_POW)
+DEFINE_ELEMENTWISE_OP(FloorDiv, VSI_NN_OP_FLOORDIV)
 
-#undef DEFINE_ELEMENTWISE_UNARY_OP
+#undef DEFINE_ELEMENTWISE_OP
 
-#define DEFINE_ELEMENTWISE_BINARY_OP(NAME, VSI_OP_CODE) \
-  NAME::NAME(Graph* graph) : Operation(graph, VSI_OP_CODE, 2, 1) {}
+Multiply::Multiply(Graph* graph, float scale)
+  : Operation(graph, VSI_NN_OP_MULTIPLY, 2, 1) {
+    this->impl()->node()->nn_param.multiply.scale = scale;
+}
 
-DEFINE_ELEMENTWISE_BINARY_OP(Minimum, VSI_NN_OP_MINIMUM);
-DEFINE_ELEMENTWISE_BINARY_OP(Maximum, VSI_NN_OP_MAXIMUM);
-DEFINE_ELEMENTWISE_BINARY_OP(Add, VSI_NN_OP_ADD);
-DEFINE_ELEMENTWISE_BINARY_OP(Sub, VSI_NN_OP_SUBTRACT);
-DEFINE_ELEMENTWISE_BINARY_OP(Div, VSI_NN_OP_DIVIDE);
-DEFINE_ELEMENTWISE_BINARY_OP(Multiply, VSI_NN_OP_MULTIPLY);
-DEFINE_ELEMENTWISE_BINARY_OP(Pow, VSI_NN_OP_POW);
-
-#undef DEFINE_ELEMENTWISE_BINARY_OP
+std::shared_ptr<Operation> Multiply::Clone(
+    std::shared_ptr<Graph>& graph) const {
+  return graph->CreateOperation<Multiply>(
+      this->impl_->node_->nn_param.multiply.scale);
+}
 
 }  // namespace ops
 }  // namespace vx

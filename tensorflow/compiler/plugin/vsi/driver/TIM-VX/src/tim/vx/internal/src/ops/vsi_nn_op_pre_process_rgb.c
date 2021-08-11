@@ -34,7 +34,7 @@
 #include "vsi_nn_ops.h"
 #include "vsi_nn_tensor.h"
 #include "vsi_nn_tensor_util.h"
-#include "client/vsi_nn_vxkernel.h"
+#include "libnnext/vsi_nn_vxkernel.h"
 #include "kernel/vsi_nn_kernel.h"
 #include "utils/vsi_nn_constraint_check.h"
 
@@ -91,6 +91,10 @@ static vsi_bool op_check
         IO_TYPE(D_U8|Q_ASYM,  D_I8|Q_DFP)
         IO_TYPE(D_U8|Q_ASYM,  D_I16|Q_DFP)
         IO_TYPE(D_U8|Q_ASYM,  D_F16)
+        IO_TYPE(D_U8,  D_U8|Q_ASYM)
+        IO_TYPE(D_U8,  D_I8|Q_DFP)
+        IO_TYPE(D_U8,  D_I16|Q_DFP)
+        IO_TYPE(D_U8,  D_F16)
     END_IO_TYPE_DECL(PRE_PROCESS_RGB)
     if(!VALIDATE_OP_IO_TYPES(PRE_PROCESS_RGB, self, inputs, self->input.num, outputs, self->output.num)) {
         char* desc = generate_op_io_types_desc(inputs,
@@ -112,7 +116,6 @@ static vsi_bool op_setup
 {
     /* TODO: Add code to comput outputs' shape. */
     vsi_nn_pre_process_rgb_param * p = NULL;
-    uint32_t axis = 0;
     uint32_t i = 0;
     p = (vsi_nn_pre_process_rgb_param *)&(self->nn_param.pre_process_rgb);
 
@@ -158,17 +161,8 @@ static vsi_bool op_setup
         }
     }
 
-    for (i = 0; i < self->nn_param.pre_process_rgb.dim_num; i++)
-    {
-        axis = self->nn_param.pre_process_rgb.perm[i];
-        if (axis != i)
-            break;
-    }
 
-    if (i == self->nn_param.pre_process_rgb.dim_num)
-        self->nn_param.pre_process_rgb.local.enable_perm = FALSE;
-    else
-        self->nn_param.pre_process_rgb.local.enable_perm = TRUE;
+    self->nn_param.pre_process_rgb.local.enable_perm = FALSE;
 
     if (self->nn_param.pre_process_rgb.local.enable_perm == FALSE)
     {

@@ -32,7 +32,7 @@
 #include "vsi_nn_prv.h"
 #include "vsi_nn_error.h"
 #include "kernel/vsi_nn_kernel.h"
-#include "client/vsi_nn_vxkernel.h"
+#include "libnnext/vsi_nn_vxkernel.h"
 
 __BEGIN_DECLS
 
@@ -46,10 +46,11 @@ typedef enum
     UNARY_NEG,
     UNARY_HSIGMOID,
     UNARY_MISH,
+    UNARY_ROUND,
 } unary_type_e;
 
 
-#define _CPU_ARG_NUM            (1)
+#define _CPU_ARG_NUM            (2)
 #define _CPU_INPUT_NUM          (1)
 #define _CPU_OUTPUT_NUM         (1)
 #define _CPU_IO_NUM             (_CPU_INPUT_NUM + _CPU_OUTPUT_NUM)
@@ -71,9 +72,9 @@ static float log_eval(float data)
     return logf(data);
 }
 
-static float elu_eval(float data)
+static float elu_eval(float data, float alpha)
 {
-    return data >=0 ? data : expf(data) - 1;
+    return data >=0 ? data : expf(data) * alpha - alpha;
 }
 
 static float neg_eval(float data)
@@ -101,6 +102,13 @@ static float mish_eval(float data)
     return data;
 }
 
+static float round_eval(float data)
+{
+    data = (float)(vsi_rtne(data));
+
+    return data;
+}
+
 DEF_KERNEL_EXECUTOR(_eltwise_unary_exec)
     (
     vsi_nn_kernel_node_t node,
@@ -114,6 +122,7 @@ DEF_KERNEL_EXECUTOR(_eltwise_unary_exec)
     size_t out_elements = 0;
     vsi_nn_kernel_tensor_attr_t * attr[_CPU_IO_NUM] = { NULL };
     int32_t i;
+    float alpha = 0;
     int32_t unary_type = 0;
 
     tensors[0]  = (vsi_nn_kernel_tensor_t)param[0];
@@ -125,6 +134,8 @@ DEF_KERNEL_EXECUTOR(_eltwise_unary_exec)
     CHECK_PTR_FAIL_GOTO( attr[1], "Create tensor attr buffer fail.", final );
 
     status = vsi_nn_kernel_scalar_read_int32((vsi_nn_kernel_scalar_t)param[2], &unary_type);
+    CHECK_STATUS_FAIL_GOTO(status, final );
+    status = vsi_nn_kernel_scalar_read_float32((vsi_nn_kernel_scalar_t)param[3], &alpha);
     CHECK_STATUS_FAIL_GOTO(status, final );
 
     buffer[0] = (float*)vsi_nn_kernel_tensor_create_buffer( tensors[0], attr[0], TRUE );
@@ -151,7 +162,7 @@ DEF_KERNEL_EXECUTOR(_eltwise_unary_exec)
             data = log_eval(data);
             break;
         case UNARY_ELU:
-            data = elu_eval(data);
+            data = elu_eval(data, alpha);
             break;
         case UNARY_NEG:
             data = neg_eval(data);
@@ -161,6 +172,9 @@ DEF_KERNEL_EXECUTOR(_eltwise_unary_exec)
             break;
         case UNARY_MISH:
             data = mish_eval(data);
+            break;
+        case UNARY_ROUND:
+            data = round_eval(data);
             break;
         default:
             break;
@@ -193,9 +207,11 @@ static vx_param_description_t kernel_param_def[] =
     {VX_INPUT, VX_TYPE_TENSOR, VX_PARAMETER_STATE_REQUIRED},
     {VX_OUTPUT, VX_TYPE_TENSOR, VX_PARAMETER_STATE_REQUIRED},
     {VX_INPUT, VX_TYPE_SCALAR, VX_PARAMETER_STATE_REQUIRED},
+    {VX_INPUT, VX_TYPE_SCALAR, VX_PARAMETER_STATE_REQUIRED},
 };
 
 #define INPUT_FUNC_TYPE           (2)
+#define INPUT_SCALAR_ALPHA        (3)
 
 static const vx_kernel_description_t _kernel_info =
 {
@@ -237,6 +253,7 @@ static vsi_nn_kernel_node_t _setup
     vsi_status status = VSI_SUCCESS;
     vsi_nn_kernel_node_param_t backend_params[_CPU_PARAM_NUM] = {NULL};
     vsi_nn_kernel_node_t node = NULL;
+    float alpha = vsi_nn_kernel_param_get_float32( params, "alpha" );
 
     status = _query_kernel( inputs, outputs, kernel );
     if( VSI_SUCCESS == status)
@@ -249,10 +266,13 @@ static vsi_nn_kernel_node_t _setup
                     inputs, _CPU_INPUT_NUM, outputs, _CPU_OUTPUT_NUM );
             backend_params[INPUT_FUNC_TYPE] = vsi_nn_kernel_scalar_create(
                     graph, I32, &unary_type );
+            backend_params[INPUT_SCALAR_ALPHA] = vsi_nn_kernel_scalar_create(
+                    graph, F32, &alpha );
             /* Pass parameters to node. */
             status = vsi_nn_kernel_node_pass_param( node, backend_params, _CPU_PARAM_NUM );
 
             vsi_nn_kernel_scalar_release( &backend_params[INPUT_FUNC_TYPE] );
+            vsi_nn_kernel_scalar_release( &backend_params[INPUT_SCALAR_ALPHA] );
         }
         else
         {
@@ -289,3 +309,4 @@ REGISTER_ELTWISE_UNARY_BACKEND_CPU( elu,          UNARY_ELU )
 REGISTER_ELTWISE_UNARY_BACKEND_CPU( neg,          UNARY_NEG )
 REGISTER_ELTWISE_UNARY_BACKEND_CPU( hard_sigmoid, UNARY_HSIGMOID )
 REGISTER_ELTWISE_UNARY_BACKEND_CPU( mish,         UNARY_MISH )
+REGISTER_ELTWISE_UNARY_BACKEND_CPU( round,        UNARY_ROUND )

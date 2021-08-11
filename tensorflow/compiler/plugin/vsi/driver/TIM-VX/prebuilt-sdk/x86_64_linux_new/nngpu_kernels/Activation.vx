@@ -1,0 +1,130 @@
+
+/*relu activation*/
+__kernel void gpuActivation_ReluFP32 (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    float4 tmp = {0.0}, dst = {0.0};
+    float tmpOut = 0.0;
+    
+    tmp = read_imagef(input, coord);
+    dst.x = max(0.0, tmp.x);
+    write_imagef(output, coord, dst);
+}
+
+__kernel void gpuActivation_ReluQuant8 (
+    __read_only image2d_array_t   input,
+    float                         scaleIn,
+    float                         input_tail,
+    float                         scaleOut,
+    float                         zpOut,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    uint4 tmp = {0.0}, dst = {0.0};
+    float inPixel, outPixel;
+    
+    tmp = read_imageui(input, coord);
+    inPixel = convert_float(tmp.x) * scaleIn - input_tail;
+    outPixel = inPixel >= 0.0 ? inPixel : 0.0;
+    dst.x = floor(outPixel * scaleOut + zpOut + 0.5);
+    write_imageui(output, coord, dst);
+}
+
+/*relu1 activation*/
+__kernel void gpuActivation_Relu1FP32 (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    float4 tmp = {0.0}, dst = {0.0};
+    
+    tmp = read_imagef(input, coord);
+    dst.x = clamp(tmp.x, -1.0, 1.0);
+    write_imagef(output, coord, dst);
+}
+
+__kernel void gpuActivation_Relu1Quant8 (
+    __read_only image2d_array_t   input,
+    float                         scaleIn,
+    float                         input_tail,
+    float                         scaleOut,
+    float                         zpOut,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    uint4 tmp = {0.0}, dst = {0.0};
+    float inPixel, outPixel;
+    
+    tmp = read_imageui(input, coord);
+    inPixel = convert_float(tmp.x) * scaleIn - input_tail;
+    outPixel = clamp(inPixel, -1.0, 1.0);
+    dst.x = floor(outPixel*scaleOut + zpOut + 0.5);
+    write_imageui(output, coord, dst);
+}
+
+/*relu6 activation*/
+__kernel void gpuActivation_Relu6FP32 (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    float4 tmp = {0.0}, dst = {0.0};
+    
+    tmp = read_imagef(input, coord);
+    dst.x = clamp(tmp.x,0.0, 6.0);
+    write_imagef(output, coord, dst);
+}
+
+__kernel void gpuActivation_Relu6Quant8 (
+    __read_only image2d_array_t   input,
+    float                         scaleIn,
+    float                         input_tail,
+    float                         scaleOut,
+    float                         zpOut,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    uint4 tmp = {0.0}, dst = {0.0};
+    float inPixel, outPixel;
+
+    tmp = read_imageui(input, coord);
+    inPixel = convert_float(tmp.x) * scaleIn - input_tail;
+    outPixel = clamp(inPixel, 0.0, 6.0);
+    dst.x = floor(outPixel*scaleOut + zpOut + 0.5);
+    write_imageui(output, coord, dst);
+}
+
+__kernel void gpuActivation_AbsFP32 (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    float4 tmp = {0.0}, dst = {0.0};
+    
+    tmp = read_imagef(input, coord);
+    tmp.y = -tmp.x;
+    dst.x = tmp.x >= 0 ? tmp.x : tmp.y;
+    write_imagef(output, coord, dst);
+}
+
+__kernel void gpuActivation_AbsQuant8 (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output,
+    float                         scaleIn,
+    float                         zpIn,
+    float                         scaleOut,
+    float                         zpOut)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    uint4 tmp = {0.0}, dst = {0.0};
+    float inPixel0, inPixel1, outPixel;
+    
+    tmp = read_imageui(input, coord);
+    inPixel0 = (convert_float(tmp.x) - zpIn) * scaleIn;
+    inPixel1 = -inPixel0;
+    outPixel = inPixel0 > 0 ? inPixel0 : inPixel1;
+    dst.x = floor(outPixel*scaleOut + zpOut);
+    write_imageui(output, coord, dst);
+}

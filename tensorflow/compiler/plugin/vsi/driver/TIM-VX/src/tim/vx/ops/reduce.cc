@@ -40,13 +40,20 @@ namespace ops {
     this->impl()->node()->nn_param.reduce.axis = axis_.data();               \
     this->impl()->node()->nn_param.reduce.axis_num = axis_.size();           \
     this->impl()->node()->nn_param.reduce.keep_dim = keep_dims_;             \
+  }                                                                          \
+  std::shared_ptr<Operation> Reduce##NAME::Clone(                            \
+      std::shared_ptr<Graph>& graph) const {                                 \
+    return graph->CreateOperation<Reduce##NAME>(this->axis_,                 \
+                                                this->keep_dims_);           \
   }
 
 DEFINE_REDUCE_OP(Min, VSI_NN_REDUCE_MIN);
 DEFINE_REDUCE_OP(Max, VSI_NN_REDUCE_MAX);
 DEFINE_REDUCE_OP(Any, VSI_NN_REDUCE_ANY);
+DEFINE_REDUCE_OP(All, VSI_NN_REDUCE_ALL);
 DEFINE_REDUCE_OP(Prod, VSI_NN_REDUCE_PROD);
 DEFINE_REDUCE_OP(Mean, VSI_NN_REDUCE_MEAN);
+DEFINE_REDUCE_OP(Sum, VSI_NN_REDUCE_SUM);
 
 #undef DEFINE_REDUCE_OP
 

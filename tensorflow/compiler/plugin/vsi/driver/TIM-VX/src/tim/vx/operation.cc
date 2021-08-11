@@ -32,14 +32,13 @@
 
 namespace tim {
 namespace vx {
-
-// OperationImpl implementation
-OperationImpl::OperationImpl(Graph* graph, uint32_t operation_id, int input_cnt,
-                             int output_cnt)
+OperationImpl::OperationImpl(Graph* graph, uint32_t operation_id,
+                              int input_cnt, int output_cnt, DataLayout layout)
     : graph_(reinterpret_cast<GraphImpl*>(graph)),
       operation_id_(operation_id),
       input_cnt_(input_cnt),
       output_cnt_(output_cnt),
+      layout_(layout),
       node_(vsi_nn_AddNode(graph_->graph(), operation_id_, input_cnt_,
                            output_cnt_, NULL)) {
   SetRoundingPolicy();
@@ -47,27 +46,31 @@ OperationImpl::OperationImpl(Graph* graph, uint32_t operation_id, int input_cnt,
 }
 
 OperationImpl& OperationImpl::BindInput(const std::shared_ptr<Tensor>& tensor) {
+  inputs_tensor_.push_back(tensor);
   uint32_t tensor_id = tensor->GetId();
   node_->input.tensors[input_tensor_index++] = tensor_id;
   if (tensor->GetSpec().attr_ & TensorAttribute::INPUT) {
     graph_->AddInput(tensor_id);
+    graph_->AddInput(tensor);
   }
   return *this;
 }
 
 OperationImpl& OperationImpl::BindOutput(
     const std::shared_ptr<Tensor>& tensor) {
+  outputs_tensor_.push_back(tensor);
   uint32_t tensor_id = tensor->GetId();
   node_->output.tensors[output_tensor_index++] = tensor_id;
   if (tensor->GetSpec().attr_ == TensorAttribute::OUTPUT) {
     graph_->AddOutput(tensor_id);
+    graph_->AddOutput(tensor);
   }
   return *this;
 }
 
 OperationImpl& OperationImpl::SetRoundingPolicy(
     OverflowPolicy overflow_policy, RoundingPolicy rounding_policy,
-    DownScaleSizeRounding down_scale_size_rounding, uint32_t accumulator_bits) {
+    RoundType down_scale_size_rounding, uint32_t accumulator_bits) {
   node_->vx_param.overflow_policy = TranslateOverflowPolicy(overflow_policy);
   node_->vx_param.rounding_policy = TranslateRoundingPolicy(rounding_policy);
   node_->vx_param.down_scale_size_rounding =
@@ -78,10 +81,10 @@ OperationImpl& OperationImpl::SetRoundingPolicy(
 }
 
 // Operation implementation
-Operation::Operation(Graph* graph, uint32_t operation_id, int input_cnt,
-                     int output_cnt) {
-  impl_ = std::make_unique<OperationImpl>(graph, operation_id, input_cnt,
-                                          output_cnt);
+Operation::Operation(Graph* graph, uint32_t operation_id,
+                     int input_cnt, int output_cnt,  DataLayout layout) {
+  impl_ = std::make_unique<OperationImpl>(graph, operation_id,
+                                          input_cnt, output_cnt, layout);
 }
 
 Operation::~Operation() {}
@@ -90,6 +93,7 @@ std::unique_ptr<OperationImpl>& Operation::impl() { return impl_; }
 
 Operation& Operation::BindInput(const std::shared_ptr<Tensor>& tensor) {
   impl_->BindInput(tensor);
+  impl_->graph_->UpdateTensorConsumersMap(tensor, this);
   return *this;
 }
 
@@ -100,7 +104,7 @@ Operation& Operation::BindOutput(const std::shared_ptr<Tensor>& tensor) {
 
 Operation& Operation::SetRoundingPolicy(
     OverflowPolicy overflow_policy, RoundingPolicy rounding_policy,
-    DownScaleSizeRounding down_scale_size_rounding, uint32_t accumulator_bits) {
+    RoundType down_scale_size_rounding, uint32_t accumulator_bits) {
   impl_->SetRoundingPolicy(overflow_policy, rounding_policy,
                            down_scale_size_rounding, accumulator_bits);
   return *this;

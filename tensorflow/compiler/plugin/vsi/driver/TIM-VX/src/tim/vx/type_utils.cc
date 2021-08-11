@@ -43,6 +43,8 @@ vsi_nn_type_e TranslateDataType(DataType dtype) {
       return VSI_NN_TYPE_FLOAT16;
     case DataType::FLOAT32:
       return VSI_NN_TYPE_FLOAT32;
+    case DataType::BOOL8:
+      return VSI_NN_TYPE_BOOL8;
     default:
       break;
   }
@@ -129,14 +131,14 @@ vsi_enum TranslateRoundingPolicy(RoundingPolicy type) {
     default:
       break;
   }
-  return VX_ROUND_POLICY_TO_ZERO;
+  return VX_ROUND_POLICY_TO_NEAREST_EVEN;
 }
 
-vsi_enum TranslateDownScaleSizeRounding(DownScaleSizeRounding type) {
+vsi_enum TranslateDownScaleSizeRounding(RoundType type) {
   switch (type) {
-    case DownScaleSizeRounding::FLOOR:
+    case RoundType::FLOOR:
       return VX_CONVOLUTIONAL_NETWORK_DS_SIZE_ROUNDING_FLOOR;
-    case DownScaleSizeRounding::CEILING:
+    case RoundType::CEILING:
       return VX_CONVOLUTIONAL_NETWORK_DS_SIZE_ROUNDING_CEILING;
     default:
       break;

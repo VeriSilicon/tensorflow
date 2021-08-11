@@ -1,0 +1,60 @@
+__kernel void gpuPeorg_FP32
+    (
+    image2d_array_t input,
+    int   stride,
+    int   outc,
+    float height_div,
+    image2d_array_t output
+    )
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    int height_in  = get_image_height(input);
+    int height_out = get_image_height(output);
+    int outx = coord.x >> 1;
+    int x_mod = coord.x  & 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i + (coord.y & 1);
+    int j = index_out * height_div;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j + outc * x_mod;
+    int4 posout = (int4)(outx, outy, outz, 0);
+    float4 dst = {0.0};
+
+    dst = read_imagef(input, coord);
+    write_imagef(output, posout, dst);
+}
+
+__kernel void gpuPeorg_Quant8
+    (
+    image2d_array_t input,
+    int   stride,
+    int   outc,
+    float height_div,
+    float scaleValue,
+    float zpTailValue,
+    image2d_array_t output
+    )
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    uint4 dst = {0.0};
+    int height_in  = get_image_height(input);
+    int height_out = get_image_height(output);
+    int outx = coord.x >> 1;
+    int x_mod = coord.x  & 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i + (coord.y & 1);
+    int j = index_out * height_div;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j + outc * x_mod;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    dst = read_imageui(input, coord);
+
+    dst.x = floor(convert_float(dst.x) * scaleValue + zpTailValue);
+
+    write_imageui(output, posout, dst);
+}

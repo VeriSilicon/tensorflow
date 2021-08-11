@@ -32,10 +32,24 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Batch2Space
+ *
+ * This operation reshapes the batch dimension (dimension 0) into M + 1 dimensions
+ * of shape **block_size** + [batch], interleaves these blocks back into the grid
+ * defined by the spatial dimensions [1, ..., M], to obtain a result with the same
+ * rank as the input. This is the reverse transformation of Space2Batch.
+ *
+ * - crop : corp the output tensor for ROI usage.
+ */
+
 class Batch2Space : public Operation {
  public:
   Batch2Space(Graph* graph, const std::vector<int>& block_size,
-              const std::vector<int>& crop);
+               const std::vector<int>& crop,
+               DataLayout layout = DataLayout::WHCN);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   std::vector<int> block_size_;

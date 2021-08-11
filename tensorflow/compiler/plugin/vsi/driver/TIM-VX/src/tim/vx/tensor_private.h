@@ -42,7 +42,7 @@ class TensorImpl : public Tensor {
   const ShapeType& GetShape() { return spec_.shape_; }
   DataType GetDataType() { return spec_.datatype_; }
   const Quantization& GetQuantization() { return spec_.quantization_; }
-  const TensorSpec& GetSpec() { return spec_; }
+  TensorSpec& GetSpec() { return spec_; }
   uint32_t GetId();
   bool CopyDataToTensor(const void* data, uint32_t size = 0);
   bool CopyDataFromTensor(void* data);
@@ -50,6 +50,7 @@ class TensorImpl : public Tensor {
   bool IsConstTensor() {
     return spec_.attr_ == tim::vx::TensorAttribute::CONSTANT;
   }
+  const void* GetDataRef() const { return data_; }
 
   GraphImpl* graph_;
   vsi_nn_tensor_id_t id_;
@@ -59,20 +60,27 @@ class TensorImpl : public Tensor {
 
 class TensorPlaceholder : public Tensor {
  public:
-  TensorPlaceholder(Graph* graph) : id_(VSI_NN_TENSOR_ID_NA) {}
+  TensorPlaceholder(Graph* graph) : id_(VSI_NN_TENSOR_ID_NA) {(void)(graph);}
   ~TensorPlaceholder(){};
 
   const ShapeType& GetShape() { return spec_.shape_; }
   DataType GetDataType() { return spec_.datatype_; }
   const Quantization& GetQuantization() { return spec_.quantization_; }
-  const TensorSpec& GetSpec() { return spec_; }
+  TensorSpec& GetSpec() { return spec_; }
   uint32_t GetId() { return id_; };
-  bool CopyDataToTensor(const void* data, uint32_t size = 0) { return false; }
-  bool CopyDataFromTensor(void* data) { return false; }
+  bool CopyDataToTensor(const void* data, uint32_t size = 0) {
+    (void)data, void(size);
+    return false;
+  }
+  bool CopyDataFromTensor(void* data) {
+    (void)data;
+    return false;
+  }
   bool IsPlaceHolder() { return true; }
   bool IsConstTensor() {
     return spec_.attr_ == tim::vx::TensorAttribute::CONSTANT;
   }
+  const void* GetDataRef() const { return nullptr; }
 
   vsi_nn_tensor_id_t id_;
   TensorSpec spec_;

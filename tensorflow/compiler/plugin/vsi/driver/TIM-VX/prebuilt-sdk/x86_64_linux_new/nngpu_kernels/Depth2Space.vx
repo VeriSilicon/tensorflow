@@ -1,0 +1,86 @@
+__kernel void gpuReorg2_Depth2SpaceFP32
+    (
+    image2d_array_t input,
+    int block_size,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int outDepth = get_image_array_size(output);
+    short short_blockSize = convert_short(block_size);
+    int inx = convert_int(convert_short(x)/short_blockSize);
+    int iny = convert_int(convert_short(y)/short_blockSize);
+    int inz = ((x - inx * block_size) + (y - iny * block_size) * block_size) * outDepth + z;
+    float4 tmp = {0.0};
+
+    tmp = read_imagef(input, (int4)(inx, iny, inz, 0));
+    write_imagef(output, (int4)(x, y, z, 0), tmp);
+}
+
+__kernel void gpuReorg2_Depth2SpaceFP32Block2
+    (
+    image2d_array_t input,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int outDepth = get_image_array_size(output);
+    int inx = x >> 1;
+    int iny = y >> 1;
+    int inz = ((x - inx * 2) + ((y - iny * 2) * 2)) * outDepth + z;
+    float4 tmp = {0.0};
+
+    tmp = read_imagef(input, (int4)(inx, iny, inz, 0));
+    write_imagef(output, (int4)(x, y, z, 0), tmp);
+}
+
+__kernel void gpuReorg2_Depth2SpaceQuant8
+    (
+    image2d_array_t input,
+    int block_size,
+    float scale,
+    int   zpIn,
+    int   zpOut,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int outDepth = get_image_array_size(output);
+    short short_blockSize = convert_short(block_size);
+    int inx = convert_int(convert_short(x)/short_blockSize);
+    int iny = convert_int(convert_short(y)/short_blockSize);
+    int inz = ((x - inx * block_size) + (y - iny * block_size) * block_size) * outDepth + z;
+    uint4 tmp = {0};
+
+    tmp = read_imageui(input, (int4)(inx, iny, inz, 0));
+    write_imageui(output, (int4)(x, y, z, 0), tmp);
+}
+
+
+__kernel void gpuReorg2_Depth2SpaceQuant8Block2
+    (
+    image2d_array_t input,
+    float scale,
+    int   zpIn,
+    int   zpOut,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int outDepth = get_image_array_size(output);
+    int inx = x >> 1;
+    int iny = y >> 1;
+    int inz = ((x - inx * 2) + ((y - iny * 2) * 2)) * outDepth + z;
+    uint4 tmp = {0};
+
+    tmp = read_imageui(input, (int4)(inx, iny, inz, 0));
+    write_imageui(output, (int4)(x, y, z, 0), tmp);
+}

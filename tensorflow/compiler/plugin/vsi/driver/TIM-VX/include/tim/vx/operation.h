@@ -34,18 +34,18 @@ class OperationImpl;
 
 class Operation {
  public:
-  Operation(Graph* graph, uint32_t operation_id, int input_cnt = 0,
-            int ouput_cnt = 0);
+  Operation(Graph* graph, uint32_t operation_id,
+            int input_cnt = 0, int ouput_cnt = 0, DataLayout layout = DataLayout::ANY);
   virtual ~Operation();
+  virtual std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const = 0;
   Operation& BindInput(const std::shared_ptr<Tensor>& tensor);
   Operation& BindOutput(const std::shared_ptr<Tensor>& tensor);
   Operation& BindInputs(const std::vector<std::shared_ptr<Tensor>>& tensors);
   Operation& BindOutputs(const std::vector<std::shared_ptr<Tensor>>& tensors);
   Operation& SetRoundingPolicy(
       OverflowPolicy overflow_policy = OverflowPolicy::SATURATE,
-      RoundingPolicy rounding_policy = RoundingPolicy::TO_ZERO,
-      DownScaleSizeRounding down_scale_size_rounding =
-          DownScaleSizeRounding::FLOOR,
+      RoundingPolicy rounding_policy = RoundingPolicy::RTNE,
+      RoundType down_scale_size_rounding = RoundType::FLOOR,
       uint32_t accumulator_bits = 0);
   std::unique_ptr<OperationImpl>& impl();
 

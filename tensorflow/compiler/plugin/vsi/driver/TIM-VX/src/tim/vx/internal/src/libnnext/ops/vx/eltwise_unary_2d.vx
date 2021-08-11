@@ -1,5 +1,7 @@
 #include "cl_viv_vx_ext.h"
 
+_viv_uniform float alpha;
+
 float4 eltwise_unary_sin(float4 x)
 {
     return native_sin(x);
@@ -24,7 +26,7 @@ float4 eltwise_unary_log(float4 x)
 float4 eltwise_unary_elu(float4 val)
 {
     float4 x = val * logE;
-    x = exp2(x) - 1;
+    x = exp2(x) * alpha - alpha;
 
     return val < 0 ? x : val;
 }
@@ -65,6 +67,11 @@ float4 eltwise_unary_mish(float4 x)
     return x;
 }
 
+float4 eltwise_unary_round(float4 x)
+{
+    return convert_float4(convert_int4_rte(x));
+}
+
 _viv_uniform float inputScale;
 _viv_uniform float inputTail;
 _viv_uniform float outputScale;
@@ -78,7 +85,8 @@ _viv_uniform VXC_512Bits uniDatatoFp32Part1_4x4;
     __kernel void func_name##_##src_type_name##to##dst_type_name##_2D( \
     __read_only  image2d_array_t  input, \
     __write_only image2d_array_t  output, \
-                 int              type \
+                 int              type, \
+                 float            _alpha \
     ) \
 { \
     int2 coord = (int2)(get_global_id(0), get_global_id(1)); \
@@ -184,7 +192,17 @@ ELTSISE_UNARY_2D(hard_sigmoid, U8,  U8,  vxc_uchar8, vxc_uchar8, int4,  vxc_ucha
 ELTSISE_UNARY_2D(hard_sigmoid, U8,  F16, vxc_uchar8, vxc_uchar8, half4, vxc_half8,  vxc_short8)
 ELTSISE_UNARY_2D(hard_sigmoid, I16, I16, vxc_short8, vxc_short8, int4,  vxc_short8, vxc_short8)
 ELTSISE_UNARY_2D(hard_sigmoid, I16, F16, vxc_short8, vxc_short8, half4, vxc_half8,  vxc_short8)
-
+//ROUND
+ELTSISE_UNARY_2D(round, F16, F16, vxc_short8, vxc_half8,  half4, vxc_half8,  vxc_short8)
+ELTSISE_UNARY_2D(round, F16, I8,  vxc_short8, vxc_half8,  int4,  vxc_char8,  vxc_char8)
+ELTSISE_UNARY_2D(round, F16, U8,  vxc_short8, vxc_half8,  int4,  vxc_uchar8, vxc_uchar8)
+ELTSISE_UNARY_2D(round, F16, I16, vxc_short8, vxc_half8,  int4,  vxc_short8, vxc_short8)
+ELTSISE_UNARY_2D(round, I8,  I8,  vxc_char8,  vxc_char8,  int4,  vxc_char8,  vxc_char8)
+ELTSISE_UNARY_2D(round, I8,  F16, vxc_char8,  vxc_char8,  half4, vxc_half8,  vxc_short8)
+ELTSISE_UNARY_2D(round, U8,  U8,  vxc_uchar8, vxc_uchar8, int4,  vxc_uchar8, vxc_uchar8)
+ELTSISE_UNARY_2D(round, U8,  F16, vxc_uchar8, vxc_uchar8, half4, vxc_half8,  vxc_short8)
+ELTSISE_UNARY_2D(round, I16, I16, vxc_short8, vxc_short8, int4,  vxc_short8, vxc_short8)
+ELTSISE_UNARY_2D(round, I16, F16, vxc_short8, vxc_short8, half4, vxc_half8,  vxc_short8)
 
 _viv_uniform VXC_512Bits uniConvBF16toF32_Part0_2x8;
 _viv_uniform VXC_512Bits uniConvBF16toF32_Part1_2x8;
@@ -194,7 +212,8 @@ _viv_uniform VXC_512Bits uniExtractOddData_2x8;
     __kernel void func_name##_BF16toBF16_2D( \
     __read_only  image2d_array_t  input, \
     __write_only image2d_array_t  output, \
-                 int              type \
+                 int              type, \
+                 float            _alpha \
     ) \
 { \
     int2 coord = (int2)(get_global_id(0), get_global_id(1)); \
@@ -231,3 +250,5 @@ ELTSISE_UNARY_BF16_2D(neg)
 ELTSISE_UNARY_BF16_2D(mish)
 //HARD_SIGMOID
 ELTSISE_UNARY_BF16_2D(hard_sigmoid)
+//ROUND
+ELTSISE_UNARY_BF16_2D(round)

@@ -29,11 +29,27 @@ namespace tim {
 namespace vx {
 namespace ops {
 
-#define DEFINE_SIMPLE_OP(NAME, VSI_OP_CODE) \
-  NAME::NAME(Graph* graph) : Operation(graph, VSI_OP_CODE) {}
+#define DEFINE_SIMPLE_OP(NAME, VSI_OP_CODE)                             \
+  NAME::NAME(Graph* graph) : Operation(graph, VSI_OP_CODE) {}           \
+  std::shared_ptr<Operation> NAME::Clone(std::shared_ptr<Graph>& graph) \
+      const {                                                           \
+    return graph->CreateOperation<NAME>();                              \
+  }
 
-DEFINE_SIMPLE_OP(DataConvert, VSI_NN_OP_DATACONVERT);
-DEFINE_SIMPLE_OP(Neg, VSI_NN_OP_NEG);
+DEFINE_SIMPLE_OP(DataConvert, VSI_NN_OP_DATACONVERT)
+DEFINE_SIMPLE_OP(Neg, VSI_NN_OP_NEG)
+DEFINE_SIMPLE_OP(Abs, VSI_NN_OP_ABS)
+DEFINE_SIMPLE_OP(Sin, VSI_NN_OP_SIN)
+// TODO(jiangbo): enable it when ovxlib supports `Cos`
+//DEFINE_SIMPLE_OP(Cos, VSI_NN_OP_COS)
+DEFINE_SIMPLE_OP(Exp, VSI_NN_OP_EXP)
+DEFINE_SIMPLE_OP(Log, VSI_NN_OP_LOG)
+DEFINE_SIMPLE_OP(Sqrt, VSI_NN_OP_SQRT)
+DEFINE_SIMPLE_OP(Rsqrt, VSI_NN_OP_RSQRT)
+DEFINE_SIMPLE_OP(Square, VSI_NN_OP_SQUARE)
+DEFINE_SIMPLE_OP(LogicalNot, VSI_NN_OP_LOGICAL_NOT)
+DEFINE_SIMPLE_OP(Floor, VSI_NN_OP_FLOOR)
+DEFINE_SIMPLE_OP(Cast, VSI_NN_OP_CAST)
 
 #undef DEFINE_SIMPLE_OP
 

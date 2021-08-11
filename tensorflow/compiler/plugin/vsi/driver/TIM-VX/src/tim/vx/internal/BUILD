@@ -69,7 +69,9 @@ filegroup(
     name = "custom_srcs",
     srcs = glob([
         "src/custom/ops/*.c",
-        "src/custom/ops/kernel/*.c",
+        "src/custom/ops/kernel/evis/*.c",
+        "src/custom/ops/kernel/cl/*.c",
+        "src/custom/ops/kernel/cpu/*.c",
     ])
 )
 
@@ -77,8 +79,8 @@ cc_library(
     name = "ovxlibimpl",
     copts = [
         "-Werror", "-Wmisleading-indentation",
-        "-Wno-strict-aliasing", "-Wno-unused-but-set-variable",
         "-fvisibility=hidden", '-DOVXLIB_API=__attribute__((visibility(\\"default\\")))',
+        "-Wno-error=strict-aliasing","-Wno-error=unused-but-set-variable"
     ],
     linkopts = ["-ldl", "-lm"],
     alwayslink=True,
@@ -129,7 +131,6 @@ cc_library(
         "include/quantization/vsi_nn_asymmetric_affine.h",
         "include/quantization/vsi_nn_dynamic_fixed_point.h",
         "include/quantization/vsi_nn_perchannel_symmetric_affine.h",
-        "include/client/vsi_nn_vxkernel.h",
         "include/interface/ops.def",
         "include/kernel/vsi_nn_kernel.h",
         "include/kernel/vsi_nn_gpu.h",
@@ -140,6 +141,7 @@ cc_library(
         "include/vsi_nn_error.h",
 
         # libnnext
+        "include/libnnext/vsi_nn_vxkernel.h",
         "include/libnnext/vx_lib_nnext.h",
         "include/libnnext/vsi_nn_libnnext_resource.h",
 
@@ -168,7 +170,6 @@ cc_library(
         "src/vsi_nn_daemon.c",
         "src/vsi_nn_graph_optimization.c",
         "src/vsi_nn_pre_post_process.c",
-        "src/client/vsi_nn_vxkernel.c",
         "src/utils/vsi_nn_link_list.c",
         "src/utils/vsi_nn_util.c",
         "src/utils/vsi_nn_math.c",
@@ -195,27 +196,16 @@ cc_library(
         "src/kernel/vsi_nn_kernel_param.c",
         "src/kernel/vsi_nn_gpu.c",
         "src/kernel/vsi_nn_kernel_gpu_shape_optimize.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_crop.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_fullconnect2.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_shufflechannel.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_resize.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_scale.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_space2depth.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_imageprocess.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_layernormalize.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_reduce.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_signalframe.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_tensorstackconcat.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_sync_host.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_spatial_transformer.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_extra_ending.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_topk.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_roi_align.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_heatmap_max_keypoint.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_axis_aligned_bbox_transform.c",
         "src/libnnext/ops/kernel/vsi_nn_kernel_box_with_nms_limit.c",
-        "src/libnnext/ops/kernel/vsi_nn_kernel_generate_proposals.c",
         "src/libnnext/vsi_nn_libnnext_resource.c",
+        "src/libnnext/vsi_nn_vxkernel.c",
     ] + [":kernel_srcs"]
       + [":operation_srcs"]
       + [":custom_srcs"],

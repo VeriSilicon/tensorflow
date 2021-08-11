@@ -29,9 +29,23 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Transpose
+ *
+ * Transposes the input tensor, permuting the dimensions according to the
+ * **perm** tensor.
+ *
+ * The returned tensor's dimension i corresponds to the input dimension perm[i].
+ * If perm is not given, it is set to (n-1...0), where n is the rank of the input
+ * tensor. Hence by default, this operation performs a regular matrix transpose on
+ * 2-D input Tensors.
+ */
+
 class Transpose : public Operation {
  public:
   Transpose(Graph* graph, const std::vector<uint32_t>& perm);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   std::vector<uint32_t> perm_;

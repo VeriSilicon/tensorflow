@@ -25,6 +25,18 @@
 #define TIM_VX_OPS_LOCALRESPONSENORMALIZATION_H_
 #include "tim/vx/operation.h"
 
+/**
+ * ## LocalResponseNormalization
+ *
+ * Applies Local Response Normalization along the depth dimension:
+ *
+ * ```
+ * sqr_sum[a, b, c, d] = sum(
+ *     pow(input[a, b, c, d - depth_radius : d + depth_radius + 1], 2))
+ *     output = input / pow((bias + alpha * sqr_sum), beta)
+ * ```
+ */
+
 namespace tim {
 namespace vx {
 namespace ops {
@@ -33,6 +45,8 @@ class LocalResponseNormalization : public Operation {
   LocalResponseNormalization(Graph* graph, uint32_t size, float alpha,
                              float beta, float bias, int32_t axis);
 
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
+
  protected:
   uint32_t size_;
   float alpha_;
@@ -40,6 +54,8 @@ class LocalResponseNormalization : public Operation {
   float bias_;
   int32_t axis_;
 };
+
+using LRN = LocalResponseNormalization;
 }  // namespace ops
 }  // namespace vx
 }  // namespace tim

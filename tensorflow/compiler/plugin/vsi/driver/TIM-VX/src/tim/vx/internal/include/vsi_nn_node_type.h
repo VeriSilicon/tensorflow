@@ -56,6 +56,7 @@
 #include "ops/vsi_nn_op_elu.h"
 #include "ops/vsi_nn_op_reverse.h"
 #include "ops/vsi_nn_op_space2depth.h"
+#include "ops/vsi_nn_op_space2depth_internal.h"
 #include "ops/vsi_nn_op_depth2space.h"
 #include "ops/vsi_nn_op_depth2space_internal.h"
 #include "ops/vsi_nn_op_maximum.h"
@@ -158,6 +159,17 @@
 #include "ops/vsi_nn_op_squeeze.h"
 #include "ops/vsi_nn_op_expand_broadcast.h"
 #include "ops/vsi_nn_op_deconvolution1d.h"
+#include "ops/vsi_nn_op_interp.h"
+#include "ops/vsi_nn_op_resize_1d.h"
+#include "ops/vsi_nn_op_resize_1d_bilinear_internal.h"
+#include "ops/vsi_nn_op_resize_1d_nearest_internal.h"
+#include "ops/vsi_nn_op_upsamplescale.h"
+#include "ops/vsi_nn_op_groupnormalize.h"
+#include "ops/vsi_nn_op_sequence_mask.h"
+#include "ops/vsi_nn_op_repeat.h"
+#include "ops/vsi_nn_op_one_hot.h"
+#include "ops/vsi_nn_op_nms.h"
+#include "ops/vsi_nn_op_grouped_conv1d.h"
 /* custom node head define define */
 #include "custom/vsi_nn_custom_node_type.h"
 
@@ -200,6 +212,7 @@ typedef union _vsi_nn_nn_param
     vsi_nn_elu_param                elu;
     vsi_nn_reverse_param            reverse;
     vsi_nn_space2depth_param        space2depth;
+    vsi_nn_space2depth_internal_param space2depth_internal;
     vsi_nn_depth2space_param        depth2space;
     vsi_nn_depth2space_internal_param depth2space_internal;
     vsi_nn_maximum_param            maximum;
@@ -302,6 +315,17 @@ typedef union _vsi_nn_nn_param
     vsi_nn_squeeze_param            squeeze;
     vsi_nn_expand_broadcast_param   expand_broadcast;
     vsi_nn_deconvolution1d_param    deconvolution1d;
+    vsi_nn_interp_param             interp;
+    vsi_nn_resize_1d_param          resize_1d;
+    vsi_nn_resize_1d_bilinear_internal_param resize_1d_bilinear_internal;
+    vsi_nn_resize_1d_nearest_internal_param resize_1d_nearest_internal;
+    vsi_nn_upsamplescale_param      upsamplescale;
+    vsi_nn_groupnormalize_param     groupnorm;
+    vsi_nn_sequence_mask_param      sequence_mask;
+    vsi_nn_repeat_param             repeat;
+    vsi_nn_one_hot_param            one_hot;
+    vsi_nn_nms_param                nms;
+    vsi_nn_grouped_conv1d_param     grouped_conv1d;
     uint8_t                         client_param[128];
 
     /* custom node data struct define */

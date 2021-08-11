@@ -11,10 +11,30 @@ build:A311D --define linux=true
 build:A311D --spawn_strategy=standalone
 build:A311D --crosstool_top=@TOOLCHAINS//gcc-linaro-7.3.1-2018.05-x86_64_aarch64-linux-gnu:toolchain
 build:A311D --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
-build:A311D --cpu=armv8-a
+build:A311D --cpu=aarch64
 build:A311D --compiler=gcc
 build:A311D --copt -Wno-ignored-attributes
 build:A311D --copt -Wno-unused-function
 build:A311D --copt -Wno-sequence-point
 build:A311D --copt -Wno-implicit-fallthrough
 build:A311D --define target_device=aarch64_A311D
+
+build:S905D3 --define linux=true
+build:S905D3 --spawn_strategy=standalone
+build:S905D3 --crosstool_top=@TOOLCHAINS//gcc-linaro-7.3.1-2018.05-x86_64_aarch64-linux-gnu:toolchain
+build:S905D3 --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+build:S905D3 --cpu=aarch64
+build:S905D3 --compiler=gcc
+build:S905D3 --copt -Wno-ignored-attributes
+build:S905D3 --copt -Wno-unused-function
+build:S905D3 --copt -Wno-sequence-point
+build:S905D3 --copt -Wno-implicit-fallthrough
+build:S905D3 --define target_device=aarch64_S905D3
+
+build:Lite_A311D --define linux=true
+build:Lite_A311D --spawn_strategy=standalone
+build:Lite_A311D --crosstool_top=@TOOLCHAINS//gcc-linaro-7.3.1-2018.05-x86_64_aarch64-linux-gnu:toolchain
+build:Lite_A311D --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+build:Lite_A311D --cpu=aarch64
+build:Lite_A311D --compiler=gcc
+build:Lite_A311D --define target_device=VIPLite_aarch64_A311D

@@ -29,12 +29,23 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Slice
+ *
+ * Extracts a slice of specified size from the input tensor starting at a specified location.
+ *
+ * - start : the beginning indices of the slice in each dimension.
+ * - length : the size of the slice in each dimension.
+ */
+
 class Slice : public Operation {
  public:
   Slice(Graph* graph,
         uint32_t dims,
         const std::vector<int32_t>& start,
         const std::vector<int32_t>& length);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   uint32_t dims_;

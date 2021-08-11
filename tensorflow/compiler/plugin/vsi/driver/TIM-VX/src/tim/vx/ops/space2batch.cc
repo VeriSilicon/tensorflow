@@ -31,8 +31,8 @@ namespace vx {
 namespace ops {
 
 Space2Batch::Space2Batch(Graph* graph, const std::vector<int>& block_size,
-                         const std::vector<int>& pad)
-    : Operation(graph, VSI_NN_OP_SPACE2BATCH),
+                         const std::vector<int>& pad, DataLayout layout)
+    : Operation(graph, VSI_NN_OP_SPACE2BATCH, 0, 0, layout),
       block_size_(block_size),
       pad_(pad) {
   this->impl()->node()->nn_param.space2batch.block_size = block_size_.data();
@@ -41,6 +41,12 @@ Space2Batch::Space2Batch(Graph* graph, const std::vector<int>& block_size,
   for (size_t i = 0; i < pad_.size(); i++) {
     this->impl()->node()->nn_param.space2batch.pad[i] = pad_[i];
   }
+}
+
+std::shared_ptr<Operation> Space2Batch::Clone(
+    std::shared_ptr<Graph>& graph) const {
+  return graph->CreateOperation<Space2Batch>(this->block_size_, this->pad_,
+                                             this->impl_->layout_);
 }
 
 }  // namespace ops

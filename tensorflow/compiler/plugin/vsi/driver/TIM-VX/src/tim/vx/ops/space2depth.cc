@@ -30,11 +30,20 @@ namespace tim {
 namespace vx {
 namespace ops {
 
-SpaceToDepth::SpaceToDepth(Graph* graph, std::vector<int> block_size)
-    : Operation(graph, VSI_NN_OP_SPACE2DEPTH), block_size_(block_size) {
+SpaceToDepth::SpaceToDepth(Graph* graph, std::vector<int> block_size,
+                           DataLayout layout)
+    : Operation(graph, VSI_NN_OP_SPACE2DEPTH, 0, 0, layout),
+      block_size_(block_size) {
   this->impl()->node()->nn_param.space2depth.block_size[0] = block_size_[0];
   this->impl()->node()->nn_param.space2depth.block_size[1] = block_size_[1];
 }
+
+std::shared_ptr<Operation> SpaceToDepth::Clone(
+    std::shared_ptr<Graph>& graph) const {
+  return graph->CreateOperation<SpaceToDepth>(this->block_size_,
+                                              this->impl_->layout_);
+}
+
 }  // namespace ops
 }  // namespace vx
 }  // namespace tim

@@ -1,0 +1,134 @@
+#define LEAKRELU_FP32_4X_PROCESS() \
+    float4 tmp = {0.0}, tmp0 = {0.0}, dst = {0.0}; \
+    tmp = read_imagef(input, coord); \
+    tmp0 = alpha * tmp; \
+    dst = tmp >= 0 ? tmp : tmp0; \
+    write_imagef(output, coord, dst);
+
+__kernel void gpuLeakyRelu_FP32_4X (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output,
+    float                         alpha)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    LEAKRELU_FP32_4X_PROCESS()
+}
+
+__kernel void gpuLeakyRelu_FP32_4X_2D (
+    __read_only image2d_t   input,
+    __write_only image2d_t  output,
+    float                         alpha)
+{
+    int2 coord = (int2)(get_global_id(0), get_global_id(1));
+    LEAKRELU_FP32_4X_PROCESS()
+}
+
+#define LEAKRELU_QUANT8_4X_PROCESS() \
+    uint4 tmp = {0.0}, dst = {0.0}; \
+    float4 inPixel0, inPixel1, outPixel; \
+    tmp = read_imageui(input, coord); \
+    inPixel0 = (convert_float4(tmp) - zpIn) * scaleIn; \
+    inPixel1 = alpha * inPixel0; \
+    outPixel = inPixel0 > 0 ? inPixel0 : inPixel1; \
+    dst = convert_uint4(outPixel * scaleOut + zpOut); \
+    write_imageui(output, coord, dst);
+
+__kernel void gpuLeakyRelu_Quant8_4X (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output,
+    float                         alpha,
+    float                         scaleIn,
+    float                         zpIn,
+    float                         scaleOut,
+    float                         zpOut)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    LEAKRELU_QUANT8_4X_PROCESS()
+}
+
+__kernel void gpuLeakyRelu_Quant8_4X_2D (
+    __read_only image2d_t   input,
+    __write_only image2d_t  output,
+    float                         alpha,
+    float                         scaleIn,
+    float                         zpIn,
+    float                         scaleOut,
+    float                         zpOut)
+{
+    int2 coord = (int2)(get_global_id(0), get_global_id(1));
+    LEAKRELU_QUANT8_4X_PROCESS()
+}
+
+
+#define LEAKRELU_FP32_4S_PROCESS() \
+    float4 tmp = {0.0}, tmp0 = {0.0}, dst = {0.0}; \
+    tmp = read_imagef(input, coord); \
+    tmp0 = alpha * tmp; \
+    dst = tmp >= 0 ? tmp : tmp0; \
+    write_imagef(output, coord, dst.xxxx); \
+    coord.x++; \
+    write_imagef(output, coord, dst.yyyy); \
+    coord.x++; \
+    write_imagef(output, coord, dst.zzzz); \
+    coord.x++; \
+    write_imagef(output, coord, dst.wwww);
+
+__kernel void gpuLeakyRelu_FP32_4s (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output,
+    float                         alpha)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    LEAKRELU_FP32_4S_PROCESS()
+}
+
+__kernel void gpuLeakyRelu_FP32_4s_2D (
+    __read_only image2d_t   input,
+    __write_only image2d_t  output,
+    float                         alpha)
+{
+    int2 coord = (int2)(get_global_id(0), get_global_id(1));
+    LEAKRELU_FP32_4S_PROCESS()
+}
+
+#define LEAKRELU_QUANT8_4S_PROCESS() \
+    uint4 tmp = {0.0}, dst = {0.0}; \
+    float4 inPixel0, inPixel1, outPixel; \
+    tmp = read_imageui(input, coord); \
+    inPixel0 = (convert_float4(tmp) - zpIn) * scaleIn; \
+    inPixel1 = alpha * inPixel0; \
+    outPixel = inPixel0 > 0 ? inPixel0 : inPixel1; \
+    dst = convert_uint4(outPixel * scaleOut + zpOut); \
+    write_imageui(output, coord, dst.xxxx); \
+    coord.x++; \
+    write_imageui(output, coord, dst.yyyy); \
+    coord.x++; \
+    write_imageui(output, coord, dst.zzzz); \
+    coord.x++; \
+    write_imageui(output, coord, dst.wwww);
+
+__kernel void gpuLeakyRelu_Quant8_4s (
+    __read_only image2d_array_t   input,
+    __write_only image2d_array_t  output,
+    float                         alpha,
+    float                         scaleIn,
+    float                         zpIn,
+    float                         scaleOut,
+    float                         zpOut)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+    LEAKRELU_QUANT8_4S_PROCESS()
+}
+
+__kernel void gpuLeakyRelu_Quant8_4s_2D (
+    __read_only image2d_t   input,
+    __write_only image2d_t  output,
+    float                         alpha,
+    float                         scaleIn,
+    float                         zpIn,
+    float                         scaleOut,
+    float                         zpOut)
+{
+    int2 coord = (int2)(get_global_id(0), get_global_id(1));
+    LEAKRELU_QUANT8_4S_PROCESS()
+}

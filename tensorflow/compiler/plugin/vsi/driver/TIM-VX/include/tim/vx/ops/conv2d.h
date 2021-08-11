@@ -32,17 +32,58 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Conv2d
+ *
+ * Performs a 2-D convolution operation, include classic Conv2D /
+ * Depthwise Conv2D / Group Conv2D / Dilation Conv2D.
+ * 
+ * Input:
+ * - input [WHCN or CWHN].
+ * - kernel [ WHIcOc ] (Ic: Input Channels. Oc: Output Channels).
+ * - bias [ O ]. Optional.
+ *
+ * Attribute:
+ * - weights : the output channel number for weight tensor.
+ * - ksize : the height and width for weight tensor.
+ * - padding : AUTO, VALID or SAME.
+ * - pad : pad value for each spatial axis.
+ * - stride : stride along each spatial axis.
+ * - dilation : dilation value along each spatial axis of the filter.
+ * - multiplier: function similar to group attribute on other framework,
+ * but the value is different. multiplier = weights / group.
+ * - layout : WHCN or CWHN.
+ */
+
 class Conv2d : public Operation {
  public:
+  Conv2d(Graph* graph, PadType padding,
+         const std::array<uint32_t, 2>& stride,
+         const std::array<uint32_t, 2>& dilation, int32_t multiplier = 0,
+         DataLayout input_layout = DataLayout::WHCN,
+         DataLayout kernel_layout = DataLayout::WHIcOc);
+  Conv2d(Graph* graph, const std::array<uint32_t, 4> pad,
+         const std::array<uint32_t, 2>& stride,
+         const std::array<uint32_t, 2>& dilation, int32_t multiplier = 0,
+         DataLayout input_layout = DataLayout::WHCN,
+         DataLayout kernel_layout = DataLayout::WHIcOc);
   Conv2d(Graph* graph, int32_t weights, PadType padding,
          const std::array<uint32_t, 2>& ksize,
          const std::array<uint32_t, 2>& stride,
-         const std::array<uint32_t, 2>& dilation, int32_t multiplier = 0);
+         const std::array<uint32_t, 2>& dilation, int32_t multiplier = 0,
+         DataLayout input_layout = DataLayout::WHCN,
+         DataLayout kernel_layout = DataLayout::WHIcOc);
   Conv2d(Graph* graph, int32_t weights, PadType padding,
          const std::array<uint32_t, 2>& ksize,
          const std::array<uint32_t, 2>& stride,
          const std::array<uint32_t, 2>& dilation,
-         const std::array<uint32_t, 4>& pad, int32_t multiplier = 0);
+         const std::array<uint32_t, 4>& pad, int32_t multiplier = 0,
+         DataLayout input_layout = DataLayout::WHCN,
+         DataLayout kernel_layout = DataLayout::WHIcOc);
+
+  DataLayout KernelDataLayout() { return kernel_layout_; }
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   const uint32_t weights_;
@@ -52,6 +93,7 @@ class Conv2d : public Operation {
   const std::array<uint32_t, 2> dilation_;
   const std::array<uint32_t, 4> pad_;
   const int32_t multiplier_;
+  const DataLayout kernel_layout_;
 };
 
 }  // namespace ops

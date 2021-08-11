@@ -28,7 +28,10 @@
 #include "context_private.h"
 #include "graph_private.h"
 #include "tensor_private.h"
+#include "operation_private.h"
+
 #include "tim/vx/context.h"
+#include "tim/vx/ops/nbg.h"
 #include "vsi_nn_pub.h"
 
 namespace tim {
@@ -37,8 +40,7 @@ namespace vx {
 GraphImpl::GraphImpl(ContextImpl* context)
     : context_(context),
       graph_(vsi_nn_CreateGraph(context_->context(), 0, 0)),
-      tensor_placeholder_(nullptr),
-      compiled_(false) {}
+      tensor_placeholder_(nullptr) {}
 
 GraphImpl::~GraphImpl() { vsi_nn_ReleaseGraph(&graph_); }
 
@@ -56,6 +58,50 @@ void GraphImpl::AddOutput(vsi_nn_tensor_id_t id) {
   }
 }
 
+void GraphImpl::AddInput(const std::shared_ptr<Tensor>& tensor) {
+  if (inputs_tensor_.end() ==
+      std::find(inputs_tensor_.begin(), inputs_tensor_.end(), tensor)) {
+    inputs_tensor_.push_back(tensor);
+  }
+}
+
+void GraphImpl::AddOutput(const std::shared_ptr<Tensor>& tensor) {
+  if (outputs_tensor_.end() ==
+      std::find(outputs_tensor_.begin(), outputs_tensor_.end(), tensor)) {
+    outputs_tensor_.push_back(tensor);
+  }
+}
+
+const std::vector<std::shared_ptr<Tensor>> GraphImpl::InputsTensor() const {
+  return inputs_tensor_;
+}
+
+const std::vector<std::shared_ptr<Tensor>> GraphImpl::OutputsTensor() const {
+  return outputs_tensor_;
+}
+
+void GraphImpl::UpdateTensorConsumersMap(const std::shared_ptr<Tensor>& tensor,
+                                         const Operation* op) {
+  for (const auto& added_op : op_vector_) {
+    if (added_op.get() == op) {
+      tensor_consumers_[tensor].push_back(added_op);
+    }
+  }
+}
+
+const std::vector<std::shared_ptr<Operation>> GraphImpl::GetConsumersOp(
+    std::shared_ptr<Tensor> tensor) const {
+  auto consumers = tensor_consumers_.find(tensor);
+  if (tensor_consumers_.end() != consumers) {
+    return consumers->second;
+  } else {
+    VSILOGD("Tensor has no consumers, may be graph output.");
+    return {};
+  }
+}
+
+void GraphImpl::PrintGraph() const { vsi_nn_PrintGraph(this->graph_); }
+
 std::shared_ptr<Tensor> GraphImpl::CreateTensor(const TensorSpec& spec,
                                                 const void* data) {
   return std::make_shared<TensorImpl>(this, spec, data);
@@ -70,20 +116,46 @@ std::shared_ptr<Tensor> GraphImpl::CreateTensorPlaceHolder() {
 }
 
 bool GraphImpl::Compile() {
-  compiled_ = true;
+  bool status = true;
 
-  vsi_nn_SetGraphInputs(graph_, inputs_.data(), inputs_.size());
-  vsi_nn_SetGraphOutputs(graph_, outputs_.data(), outputs_.size());
+  auto major = vsi_nn_GetVersionMajor();
+  auto minor = vsi_nn_GetVersionMinor();
+  auto patch = vsi_nn_GetVersionPatch();
 
-  return (VSI_SUCCESS == vsi_nn_SetupGraph(graph_, true) &&
-          VSI_SUCCESS == vsi_nn_VerifyGraph(graph_));
+  vsi_nn_SetGraphVersion(graph_,major,minor,patch);
+
+  std::call_once(setio_once_, [&status, this]() {
+    status = (vsi_nn_SetGraphInputs(this->graph_, this->inputs_.data(), this->inputs_.size()) &&
+              vsi_nn_SetGraphOutputs(this->graph_, this->outputs_.data(), this->outputs_.size()));
+  });
+
+  std::call_once(setup_once_, [&status, this](){
+    status = (VSI_SUCCESS == vsi_nn_SetupGraph(this->graph_, true));
+  });
+
+  std::call_once(verify_graph_once_, [&status, this]() {
+    status = (VSI_SUCCESS == vsi_nn_VerifyGraph(this->graph_));
+  });
+
+  return status;
+}
+
+bool GraphImpl::CompileToBinary(void* buf, size_t* size) {
+  bool status = true;
+  std::call_once(setio_once_, [&status, this]() {
+    status = (vsi_nn_SetGraphInputs(this->graph_, this->inputs_.data(), this->inputs_.size()) &&
+              vsi_nn_SetGraphOutputs(this->graph_,this->outputs_.data(), this->outputs_.size()));
+  });
+
+  std::call_once(setup_once_, [&status, this](){
+    status = (VSI_SUCCESS == vsi_nn_SetupGraph(this->graph_, true));
+  });
+
+  return ((status) && (VSI_SUCCESS == vsi_nn_GenerateNBG(graph_, buf, size)));
 }
 
 bool GraphImpl::Run() {
-  if (!compiled_ && !Compile()) {
-    return false;
-  }
-  return (VSI_SUCCESS == vsi_nn_RunGraph(graph_));
+  return ((Compile()) && (VSI_SUCCESS == vsi_nn_RunGraph(graph_)));
 }
 
 }  // namespace vx

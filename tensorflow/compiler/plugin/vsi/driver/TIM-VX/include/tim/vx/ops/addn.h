@@ -29,9 +29,19 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## AddN
+ *
+ * ```
+ *   AddN(x)                : Input0 + Input1 + ... + InputN
+ * ```
+ */
+
 class AddN : public Operation {
  public:
   AddN(Graph* graph, uint32_t num_inputs);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 };
 
 }  // namespace ops

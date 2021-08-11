@@ -30,28 +30,38 @@ namespace tim {
 namespace vx {
 class OperationImpl {
  public:
+  // OperationImpl(Graph* graph, uint32_t operation_id, int input_cnt = 0,
+  //               int output_cnt = 0);
   OperationImpl(Graph* graph, uint32_t operation_id, int input_cnt = 0,
-                int output_cnt = 0);
+                int output_cnt = 0, DataLayout layout = DataLayout::ANY);
   ~OperationImpl() {}
 
   OperationImpl& BindInput(const std::shared_ptr<Tensor>& tensor);
   OperationImpl& BindOutput(const std::shared_ptr<Tensor>& tensor);
   OperationImpl& SetRoundingPolicy(
       OverflowPolicy overflow_policy = OverflowPolicy::SATURATE,
-      RoundingPolicy rounding_policy = RoundingPolicy::TO_ZERO,
-      DownScaleSizeRounding down_scale_size_rounding =
-          DownScaleSizeRounding::FLOOR,
+      RoundingPolicy rounding_policy = RoundingPolicy::RTNE,
+      RoundType down_scale_size_rounding = RoundType::FLOOR,
       uint32_t accumulator_bits = 0);
 
   vsi_nn_node_t* node() { return this->node_; }
+
+  std::vector<std::shared_ptr<Tensor>> InputsTensor() { return inputs_tensor_; }
+  std::vector<std::shared_ptr<Tensor>> OutputsTensor() {
+    return outputs_tensor_;
+  }
 
   GraphImpl* graph_;
   uint32_t operation_id_{0};
   int32_t input_cnt_{0};
   int32_t output_cnt_{0};
+  DataLayout layout_{DataLayout::ANY};
   vsi_nn_node_t* node_{nullptr};
   int32_t input_tensor_index{0};
   int32_t output_tensor_index{0};
+  std::vector<std::shared_ptr<Tensor>> inputs_tensor_;
+  std::vector<std::shared_ptr<Tensor>> outputs_tensor_;
+
 };
 
 }  // namespace vx

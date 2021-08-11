@@ -29,13 +29,22 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Reverse
+ *
+ * Reverses specific dimensions of a tensor.
+ *
+ * - axis : The indices of the dimensions to reverse. 
+ */
+
 class Reverse : public Operation {
  public:
-  Reverse(Graph* graph, int32_t* axis, uint32_t axis_num);
+  Reverse(Graph* graph, const std::vector<int32_t>& axis);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
-  int32_t* axis_;
-  uint32_t axis_num_;
+  const std::vector<int32_t> axis_;
 };
 
 }  // namespace ops

@@ -27,10 +27,13 @@
 #include <memory>
 #include <vector>
 
-#include "tim/vx/tensor.h"
-
 namespace tim {
 namespace vx {
+
+class Tensor;
+struct TensorSpec;
+
+class Operation;
 
 class Graph {
  public:
@@ -46,13 +49,32 @@ class Graph {
   /// Freeze graph
   virtual bool Compile() = 0;
 
-  /// Process the compiled graph
+  /// Compile to BinaryGraph
+  virtual bool CompileToBinary(void* buf, size_t* size) = 0;
+
   virtual bool Run() = 0;
 
   template <typename OpType, typename... Params>
   std::shared_ptr<OpType> CreateOperation(Params... parameters) {
-    return std::make_shared<OpType>(this, parameters...);
+    auto op = std::make_shared<OpType>(this, parameters...);
+    op_vector_.push_back(op);
+    return op;
   }
+
+  virtual const std::vector<std::shared_ptr<Tensor>> InputsTensor() const = 0;
+  virtual const std::vector<std::shared_ptr<Tensor>> OutputsTensor() const = 0;
+
+  virtual void UpdateTensorConsumersMap(
+      const std::shared_ptr<Tensor>& tensor,
+      const Operation* op) = 0;
+
+  virtual const std::vector<std::shared_ptr<Operation>> GetConsumersOp(
+      std::shared_ptr<Tensor> tensor) const = 0;
+  
+  virtual void PrintGraph() const = 0;
+
+ protected:
+  std::vector<std::shared_ptr<tim::vx::Operation>> op_vector_;
 };
 
 }  // namespace vx

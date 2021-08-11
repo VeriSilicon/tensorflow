@@ -33,12 +33,33 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Pool2d
+ *
+ * Performs an 2-D pooling operation.
+ *
+ * - type : MAX, AVG, L2 or AVG_ANDROID.
+ * - padding : AUTO, VALID or SAME.
+ * - ksize : filter size.
+ * - stride : stride along each spatial axis.
+ * - round_type : CEILING or FLOOR.
+ */
+
 class Pool2d : public Operation {
  public:
   Pool2d(Graph* graph, PoolType type, PadType padding,
          const std::array<uint32_t, 2>& ksize,
          const std::array<uint32_t, 2>& stride,
-         RoundType round_type = RoundType::CEILING);
+         RoundType round_type = RoundType::FLOOR,
+         DataLayout layout = DataLayout::WHCN);
+  Pool2d(Graph* graph, PoolType type,
+         const std::array<uint32_t, 4>& pad,
+         const std::array<uint32_t, 2>& ksize,
+         const std::array<uint32_t, 2>& stride,
+         RoundType round_type = RoundType::FLOOR,
+         DataLayout layout = DataLayout::WHCN);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   const PoolType type_;
@@ -46,6 +67,7 @@ class Pool2d : public Operation {
   const std::array<uint32_t, 2> ksize_;
   const std::array<uint32_t, 2> stride_;
   const RoundType round_type_;
+  const std::array<uint32_t, 4> pad_;
 };
 
 }  // namespace ops

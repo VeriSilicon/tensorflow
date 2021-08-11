@@ -36,7 +36,8 @@ enum class DataType {
   INT32,
   UINT32,
   FLOAT16,
-  FLOAT32
+  FLOAT32,
+  BOOL8
 };
 
 enum class QuantType { NONE, ASYMMETRIC, SYMMETRIC_PER_CHANNEL };
@@ -59,19 +60,16 @@ enum class OverflowPolicy { WRAP, SATURATE };
 
 enum class RoundingPolicy { TO_ZERO, RTNE };
 
-enum class DownScaleSizeRounding { FLOOR, CEILING };
-
-enum class ActivationType {
-  NONE,
-  RELU,
-  RELU1,
-  RELU6,
-  TANH,
-  //SIGNBIT,
-  SIGMOID
-};
-
 enum class ResizeType { NEAREST_NEIGHBOR, BILINEAR, AREA };
+
+enum class DataLayout {
+  WHCN,
+  CWHN,
+  ANY,
+  IcWHOc /*TF*/,
+  OcIcWH /*TVM*/,
+  WHIcOc /*TIM-VX default*/
+};
 
 }  // namespace vx
 }  // namespace tim

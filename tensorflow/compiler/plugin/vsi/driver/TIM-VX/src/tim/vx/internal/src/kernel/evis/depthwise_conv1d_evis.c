@@ -702,27 +702,67 @@ static vsi_nn_kernel_node_t _setup
     )
 {
     vsi_status status = VSI_FAILURE;
-    vsi_nn_kernel_node_param_t node_params[_DEPTHWISE_CONV1D_PARAM_NUM];
+    vsi_nn_kernel_node_param_t node_params[_DEPTHWISE_CONV1D_PARAM_NUM] = {NULL};
     vsi_nn_kernel_node_t node = NULL;
     int32_t weight_pad_front[VSI_NN_MAX_DIM_NUM] = {0};
     int32_t weight_pad_end[VSI_NN_MAX_DIM_NUM] = {0};
     vsi_nn_tensor_t * weights = NULL;
     vsi_nn_tensor_t * biases = NULL;
     vsi_nn_tensor_t *temp_tensor[3] = {NULL};
+    vsi_nn_tensor_t* reshape_tensors[3] = { NULL };
+    int32_t shape[VSI_NN_MAX_DIM_NUM] = { 0 };
+    int32_t new_rank = 2;
+    uint32_t i = 0;
     int32_t stride     = vsi_nn_kernel_param_get_int32( params, "stride" );
     int32_t pad_front  = vsi_nn_kernel_param_get_int32( params, "pad_front" );
     int32_t pad_end  = vsi_nn_kernel_param_get_int32( params, "pad_end" );
     int32_t dilation   = vsi_nn_kernel_param_get_int32( params, "dilation" );
+    int32_t batch = inputs[0]->attr.size[2];
     _internal_kernel_size_e ks   = KN;
 
-    weight_pad_end[0] = gpu_align_np2_safe(inputs[1]->attr.size[0], 8) - inputs[1]->attr.size[0];
+    if ( (!((VSI_NN_TYPE_UINT8 == inputs[0]->attr.dtype.vx_type)
+       && (VSI_NN_TYPE_UINT8 == inputs[1]->attr.dtype.vx_type)
+       && (NULL == inputs[2] || VSI_NN_TYPE_INT32 == inputs[2]->attr.dtype.vx_type)
+       && (VSI_NN_TYPE_UINT8 == outputs[0]->attr.dtype.vx_type))) || batch > 1)
+    {
+        return NULL;
+    }
 
-    weights = vsi_nn_pad_tensor(graph, inputs[1], weight_pad_front, weight_pad_end, inputs[1]->attr.dim_num,
-        VSI_NN_PAD_MODE_CONSTANT, 0);
+    reshape_tensors[0] = inputs[0];
 
-    biases = vsi_nn_merge_input_zeropoint_to_bias(graph, inputs[0], inputs[1], inputs[2]);
+    if (inputs[1]->attr.dtype.qnt_type != VSI_NN_QNT_TYPE_AFFINE_PERCHANNEL_SYMMETRIC)
+    {
+        shape[0] = inputs[1]->attr.size[0];
+        shape[1] = 1;
+        for (i = 1; i < inputs[1]->attr.dim_num; i++)
+        {
+            shape[1] *= inputs[1]->attr.size[i];
+        }
+        reshape_tensors[1] = vsi_nn_reshape_tensor( graph,
+                inputs[1], (uint32_t*)shape, new_rank );
+    }
+    else
+    {
+        reshape_tensors[1] = inputs[1];
+    }
 
-    temp_tensor[0] = inputs[0];
+    if (inputs[2] && inputs[2]->attr.dim_num == 1)
+    {
+        shape[0] = inputs[2]->attr.size[0];
+        shape[1] = 1;
+        new_rank = 2;
+        reshape_tensors[2] = vsi_nn_reshape_tensor( graph,
+                inputs[2], (uint32_t*)shape, new_rank );
+    }
+
+    weight_pad_end[0] = gpu_align_np2_safe(reshape_tensors[1]->attr.size[0], 8) - reshape_tensors[1]->attr.size[0];
+
+    weights = vsi_nn_pad_tensor(graph, reshape_tensors[1], weight_pad_front, weight_pad_end,
+        reshape_tensors[1]->attr.dim_num, VSI_NN_PAD_MODE_CONSTANT, 0);
+
+    biases = vsi_nn_merge_input_zeropoint_to_bias(graph, reshape_tensors[0], reshape_tensors[1], reshape_tensors[2]);
+
+    temp_tensor[0] = reshape_tensors[0];
     temp_tensor[1] = weights;
     temp_tensor[2] = biases;
 
@@ -730,18 +770,27 @@ static vsi_nn_kernel_node_t _setup
 
     status = _query_kernel( kernel, temp_tensor, outputs, dilation, ks);
 
-    if( VSI_SUCCESS == status)
+    if ( VSI_SUCCESS == status)
     {
         node = vsi_nn_kernel_create_node( graph, kernel );
-        if( node )
+        if ( node )
         {
-            if( pad_front != 0 && pad_end != 0)
+            if ( pad_front != 0 && pad_end != 0)
             {
                 // Set default border mode.
                 vx_border_t border;
                 border.mode = VX_BORDER_CONSTANT;
-                border.constant_value.U8 = 0;
-                border.constant_value.U16 = 0;
+                if (VSI_NN_TYPE_UINT8 == inputs[0]->attr.dtype.vx_type &&
+                    VSI_NN_QNT_TYPE_AFFINE_ASYMMETRIC == inputs[0]->attr.dtype.qnt_type)
+                {
+                    border.constant_value.U8 = (uint8_t)inputs[0]->attr.dtype.zero_point;
+                }
+                else
+                {
+                    border.constant_value.U8 = 0;
+                    border.constant_value.U16 = 0;
+                }
+
                 status |= vxSetNodeAttribute( (vx_node)node, VX_NODE_BORDER, &border, sizeof(border) );
             }
 
@@ -758,6 +807,16 @@ static vsi_nn_kernel_node_t _setup
             vsi_nn_kernel_scalar_release( &node_params[PARAM_STRIDE] );
             vsi_nn_kernel_scalar_release( &node_params[PARAM_DILATION] );
         }
+    }
+
+    if (inputs[1]->attr.dtype.qnt_type != VSI_NN_QNT_TYPE_AFFINE_PERCHANNEL_SYMMETRIC)
+    {
+        vsi_nn_ReleaseTensor( &reshape_tensors[1] );
+    }
+
+    if (inputs[2] && inputs[2]->attr.dim_num == 1)
+    {
+        vsi_nn_ReleaseTensor( &reshape_tensors[2] );
     }
 
     if (weights)

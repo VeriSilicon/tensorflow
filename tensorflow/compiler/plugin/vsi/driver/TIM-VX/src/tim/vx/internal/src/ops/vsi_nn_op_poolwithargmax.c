@@ -34,7 +34,7 @@
 #include "utils/vsi_nn_util.h"
 #include "vsi_nn_prv.h"
 #include "vsi_nn_log.h"
-#include "client/vsi_nn_vxkernel.h"
+#include "libnnext/vsi_nn_vxkernel.h"
 #include "kernel/vsi_nn_kernel_eltwise.h"
 #include "utils/vsi_nn_constraint_check.h"
 
@@ -245,6 +245,15 @@ static vsi_bool op_setup
 {
     vsi_bool ret = TRUE;
 
+    vsi_nn_compute_padding(
+        inputs[0]->attr.size,
+        self->nn_param.pool.ksize,
+        self->nn_param.pool.stride,
+        NULL,
+        self->nn_param.pool.pad_type,
+        self->nn_param.pool.pad
+    );
+
     if( VSI_NN_DIM_AUTO == outputs[0]->attr.dim_num )
     {
         ret = vsi_nn_OpSetup( VSI_NN_OP_POOL, self, inputs, outputs );
@@ -258,17 +267,6 @@ static vsi_status op_deinit
     vsi_nn_node_t * self
     )
 {
-    uint32_t i;
-
-    for (i = 0; i < _VSI_NN_POOLWITHARGMAX_LOCAL_TENSOR_NUM; i++)
-    {
-        if (self->nn_param.pool.local.local_tensor[i] != NULL)
-        {
-            vxReleaseTensor(&(self->nn_param.pool.local.local_tensor[i]));
-            self->nn_param.pool.local.local_tensor[i] = NULL;
-        }
-    }
-
     vsi_nn_op_common_deinit(self);
 
     return VSI_SUCCESS;

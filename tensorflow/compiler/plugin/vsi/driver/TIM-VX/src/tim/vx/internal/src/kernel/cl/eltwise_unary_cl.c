@@ -48,6 +48,7 @@ typedef enum
     UNARY_NEG,
     UNARY_HSIGMOID,
     UNARY_MISH,
+    UNARY_ROUND,
 } unary_type_e;
 
 /*
@@ -91,7 +92,8 @@ typedef enum
 #define ELU_OPERATION           elu
 #define NEG_OPERATION           neg
 #define HSIGMOID_OPERATION      hard_sigmoid
-#define MISH_OPERATION      mish
+#define MISH_OPERATION          mish
+#define ROUND_OPERATION         round
 
 static const struct {
         uint32_t key;
@@ -113,6 +115,8 @@ static const struct {
     TENSOR_UNARY_KERNELS_FLOAT(HSIGMOID_OPERATION, UNARY_HSIGMOID, F16, F16)
     TENSOR_UNARY_KERNELS_FLOAT(MISH_OPERATION,     UNARY_MISH,     F32, F32)
     TENSOR_UNARY_KERNELS_FLOAT(MISH_OPERATION,     UNARY_MISH,     F16, F16)
+    TENSOR_UNARY_KERNELS_FLOAT(ROUND_OPERATION,    UNARY_ROUND,    F32, F32)
+    TENSOR_UNARY_KERNELS_FLOAT(ROUND_OPERATION,    UNARY_ROUND,    F16, F16)
 
     TENSOR_UNARY_KERNELS_FLOAT_2D(SIN_OPERATION,      UNARY_SIN,      F32, F32)
     TENSOR_UNARY_KERNELS_FLOAT_2D(SIN_OPERATION,      UNARY_SIN,      F16, F16)
@@ -128,6 +132,8 @@ static const struct {
     TENSOR_UNARY_KERNELS_FLOAT_2D(HSIGMOID_OPERATION, UNARY_HSIGMOID, F16, F16)
     TENSOR_UNARY_KERNELS_FLOAT_2D(MISH_OPERATION,     UNARY_MISH,     F32, F32)
     TENSOR_UNARY_KERNELS_FLOAT_2D(MISH_OPERATION,     UNARY_MISH,     F16, F16)
+    TENSOR_UNARY_KERNELS_FLOAT_2D(ROUND_OPERATION,    UNARY_ROUND,    F32, F32)
+    TENSOR_UNARY_KERNELS_FLOAT_2D(ROUND_OPERATION,    UNARY_ROUND,    F16, F16)
 
     TENSOR_UNARY_KERNELS(SIN_OPERATION,      UNARY_SIN,      U8,  U8)
     TENSOR_UNARY_KERNELS(EXP_OPERATION,      UNARY_EXP,      U8,  U8)
@@ -136,6 +142,7 @@ static const struct {
     TENSOR_UNARY_KERNELS(NEG_OPERATION,      UNARY_NEG,      U8,  U8)
     TENSOR_UNARY_KERNELS(HSIGMOID_OPERATION, UNARY_HSIGMOID, U8,  U8)
     TENSOR_UNARY_KERNELS(MISH_OPERATION,     UNARY_MISH,     U8,  U8)
+    TENSOR_UNARY_KERNELS(ROUND_OPERATION,    UNARY_ROUND,    U8,  U8)
 
     TENSOR_UNARY_KERNELS_2D(SIN_OPERATION,      UNARY_SIN,      U8,  U8)
     TENSOR_UNARY_KERNELS_2D(EXP_OPERATION,      UNARY_EXP,      U8,  U8)
@@ -144,6 +151,7 @@ static const struct {
     TENSOR_UNARY_KERNELS_2D(NEG_OPERATION,      UNARY_NEG,      U8,  U8)
     TENSOR_UNARY_KERNELS_2D(HSIGMOID_OPERATION, UNARY_HSIGMOID, U8,  U8)
     TENSOR_UNARY_KERNELS_2D(MISH_OPERATION,     UNARY_MISH,     U8,  U8)
+    TENSOR_UNARY_KERNELS_2D(ROUND_OPERATION,    UNARY_ROUND,    U8,  U8)
 
     TENSOR_UNARY_KERNELS(NEG_OPERATION, UNARY_NEG, I32,  I32)
 
@@ -157,6 +165,7 @@ static const struct {
 #undef NEG_OPERATION
 #undef HSIGMOID_OPERATION
 #undef MISH_OPERATION
+#undef ROUND_OPERATION
 /*
  * Kernel params
  */
@@ -168,12 +177,14 @@ static vx_param_description_t kernel_param_def[] =
     {VX_INPUT, VX_TYPE_SCALAR, VX_PARAMETER_STATE_REQUIRED},
     {VX_INPUT, VX_TYPE_SCALAR, VX_PARAMETER_STATE_REQUIRED},
     {VX_INPUT, VX_TYPE_SCALAR, VX_PARAMETER_STATE_REQUIRED},
+    {VX_INPUT, VX_TYPE_SCALAR, VX_PARAMETER_STATE_REQUIRED},
 };
 
 #define SCALAR_INPUT_SCALE           (2)
 #define SCALAR_INPUT_TAIL            (3)
 #define SCALAR_OUTPUT_SCALE          (4)
 #define SCALAR_OUTPUT_ZP             (5)
+#define SCALAR_ALPHA                 (6)
 #define _CL_PARAM_NUM          _cnt_of_array(kernel_param_def)
 
 /*
@@ -293,6 +304,7 @@ static vsi_nn_kernel_node_t _setup
     float inputTail = (float)inputs[0]->attr.dtype.zero_point * inputScale;
     float outputScale = outputs[0]->attr.dtype.scale;
     float outputZP = (float)outputs[0]->attr.dtype.zero_point + 0.5f;
+    float alpha = vsi_nn_kernel_param_get_float32( params, "alpha" );
 
     ret = vsi_nn_kernel_optimize_element_shape(
             (int32_t *)inputs[0]->attr.size, inputs[0]->attr.dim_num,
@@ -331,6 +343,8 @@ static vsi_nn_kernel_node_t _setup
                     graph, F32, &outputScale );
             node_params[SCALAR_OUTPUT_ZP] = vsi_nn_kernel_scalar_create(
                     graph, F32, &outputZP );
+            node_params[SCALAR_ALPHA] = vsi_nn_kernel_scalar_create(
+                    graph, F32, &alpha );
 
             /* Pass parameters to node. */
             status  = vsi_nn_kernel_node_pass_param( node, node_params, _CL_PARAM_NUM );
@@ -369,6 +383,11 @@ OnError:
         vsi_nn_kernel_scalar_release( &node_params[SCALAR_OUTPUT_ZP] );
     }
 
+    if (node_params[SCALAR_ALPHA])
+    {
+        vsi_nn_kernel_scalar_release( &node_params[SCALAR_ALPHA] );
+    }
+
     return node;
 } /* _setup() */
 
@@ -397,5 +416,5 @@ REGISTER_ELTWISE_UNARY_BACKEND_CL( elu,          UNARY_ELU )
 REGISTER_ELTWISE_UNARY_BACKEND_CL( neg,          UNARY_NEG )
 REGISTER_ELTWISE_UNARY_BACKEND_CL( hard_sigmoid, UNARY_HSIGMOID )
 REGISTER_ELTWISE_UNARY_BACKEND_CL( mish,         UNARY_MISH )
-
+REGISTER_ELTWISE_UNARY_BACKEND_CL( round,        UNARY_ROUND )
 __END_DECLS

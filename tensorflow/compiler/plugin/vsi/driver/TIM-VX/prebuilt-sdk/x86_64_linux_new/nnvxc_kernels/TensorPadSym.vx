@@ -1,0 +1,157 @@
+#pragma OPENCL EXTENSION cl_viv_vx_extension : enable
+
+#include "cl_viv_vx_ext.h"
+
+_viv_uniform int padChn;
+_viv_uniform int padTop;
+_viv_uniform int padLeft;
+_viv_uniform int in_width;
+_viv_uniform int in_height;
+_viv_uniform int in_chn;
+_viv_uniform int out_chn;
+
+__kernel void vxcTensorPadSym_16Bits_whc(
+    image2d_array_t input,
+    image2d_array_t output)
+{
+    // output coordinate after offset [-padLeft, -padTop]
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn;
+    int bid = gidz / (short)out_chn;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+    gidx -= padLeft;
+    gidy -= padTop;
+    cid -= padChn;
+    int4 coord_in = (int4)(gidx, gidy, cid + bid * in_chn, 0);
+    int distx = gidx - in_width;
+    int disty = gidy - in_height;
+    int distz = cid - in_chn;
+    if(gidx < 0)
+    {
+        coord_in.x = -1 - gidx;
+    }
+    if(distx >= 0)
+    {
+        coord_in.x = in_width - distx - 1;
+    }
+    if(gidy < 0)
+    {
+        coord_in.y = -1 - gidy;
+    }
+    if(disty >= 0)
+    {
+        coord_in.y = in_height - disty - 1;
+    }
+    if(cid < 0)
+    {
+        coord_in.z = -1 - cid + bid * in_chn;
+    }
+    if(distz >= 0)
+    {
+        coord_in.z = in_chn - distz - 1 + bid * in_chn;
+    }
+
+    vxc_short8 src0;
+    VXC_ReadImage2DArray(src0, input, coord_in, VXC_5BITOFFSET_XY(0, 0), VXC_MODIFIER(0, 0, 0, VXC_RM_TowardZero, 0));
+    VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 0, 0, VXC_RM_TowardZero, 0));
+}
+
+__kernel void vxcTensorPadSym_8Bits_whc(
+    image2d_array_t input,
+    image2d_array_t output)
+{
+    // output coordinate after offset [-padLeft, -padTop]
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn;
+    int bid = gidz / (short)out_chn;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+    gidx -= padLeft;
+    gidy -= padTop;
+    cid -= padChn;
+    int4 coord_in = (int4)(gidx, gidy, cid + bid * in_chn, 0);
+    int distx = gidx - in_width;
+    int disty = gidy - in_height;
+    int distz = cid - in_chn;
+    if(gidx < 0)
+    {
+        coord_in.x = -1 - gidx;
+    }
+    if(distx >= 0)
+    {
+        coord_in.x = in_width - distx - 1;
+    }
+    if(gidy < 0)
+    {
+        coord_in.y = -1 - gidy;
+    }
+    if(disty >= 0)
+    {
+        coord_in.y = in_height - disty - 1;
+    }
+    if(cid < 0)
+    {
+        coord_in.z = -1 - cid + bid * in_chn;
+    }
+    if(distz >= 0)
+    {
+        coord_in.z = in_chn - distz - 1 + bid * in_chn;
+    }
+
+    vxc_char16 src0;
+    VXC_ReadImage2DArray(src0, input, coord_in, VXC_5BITOFFSET_XY(0, 0), VXC_MODIFIER(0, 0, 0, VXC_RM_TowardZero, 0));
+    VXC_WriteImage2DArray(output, coord_out, src0, VXC_MODIFIER(0, 0, 0, VXC_RM_TowardZero, 0));
+}
+
+__kernel void vxcTensorPadSym_F32toBF16_whc(
+    image2d_array_t input,
+    image2d_array_t output)
+{
+    // output coordinate after offset [-padLeft, -padTop]
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int cid = gidz % out_chn;
+    int bid = gidz / (short)out_chn;
+    int4 coord_out = (int4)(gidx, gidy, gidz, 0);
+    gidx -= padLeft;
+    gidy -= padTop;
+    cid -= padChn;
+    int4 coord_in = (int4)(gidx, gidy, cid + bid * in_chn, 0);
+    int distx = gidx - in_width;
+    int disty = gidy - in_height;
+    int distz = cid - in_chn;
+    if(gidx < 0)
+    {
+        coord_in.x = -1 - gidx;
+    }
+    if(distx >= 0)
+    {
+        coord_in.x = in_width - distx - 1;
+    }
+    if(gidy < 0)
+    {
+        coord_in.y = -1 - gidy;
+    }
+    if(disty >= 0)
+    {
+        coord_in.y = in_height - disty - 1;
+    }
+    if(cid < 0)
+    {
+        coord_in.z = -1 - cid + bid * in_chn;
+    }
+    if(distz >= 0)
+    {
+        coord_in.z = in_chn - distz - 1 + bid * in_chn;
+    }
+
+    vxc_ushort8 tmp, dst;
+    float4 src0 = read_imagef(input, coord_in);
+    _viv_asm(COPY, tmp, src0, 16);
+    dst.s0123 = tmp.s1357;
+    VXC_WriteImage2DArray(output, coord_out, dst, VXC_MODIFIER(0, 0, 0, VXC_RM_TowardZero, 0));
+}

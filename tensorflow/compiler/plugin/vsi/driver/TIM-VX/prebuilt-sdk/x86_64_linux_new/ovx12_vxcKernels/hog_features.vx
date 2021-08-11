@@ -1,0 +1,80 @@
+#pragma OPENCL EXTENSION cl_viv_vx_extension : enable
+
+#include "cl_viv_vx_ext.h"
+
+typedef struct {
+    int cell_width; 
+    int cell_height; 
+    int block_width; 
+    int block_height; 
+    int block_stride;
+    int num_bins;
+    int window_width;
+    int window_height;
+    int window_stride;
+    float threshold;
+} vx_hog_t;
+
+__kernel void hog_features(
+    __read_only image2d_t in_image,
+    global void* magnitudes_data,
+    global void* bins_data,
+    global void* hog_param,
+    global int* hog_size,
+    global void* features_data,
+    global int* data_type
+)
+{
+
+    const int blkW = get_global_id(0);
+    const int blkH = get_global_id(1);
+
+    vx_hog_t *hog_params_t = (vx_hog_t *)hog_param;
+
+
+    int width, height;
+    width = get_image_width(in_image);
+    height = get_image_height(in_image);
+
+    int num_windowsW = width / hog_params_t->window_width;
+    int num_windowsH = height / hog_params_t->window_height;
+    int num_blockW = width / hog_params_t->cell_width - 1;
+    int num_blockH = height / hog_params_t->cell_height - 1;
+    int num_block = num_blockW * num_blockH;
+    int n_cellsx = width / hog_params_t->cell_width;
+    int cells_per_block_w = hog_params_t->block_width / hog_params_t->cell_width;
+    int cells_per_block_h = hog_params_t->block_height / hog_params_t->cell_height;
+    int dataType = *data_type;
+
+    float sum = 0;
+    for (int y = 0; y < cells_per_block_h; y++)
+    {
+        for (int x = 0; x < cells_per_block_w; x++)
+        {
+            int index = (blkH + y)*n_cellsx + (blkW + x);
+            void *mag_ptr = (short *)magnitudes_data + index;
+            sum += (*(short *)mag_ptr) * (*(short *)mag_ptr);
+        }
+    }
+    sum = sqrt(sum + 0.00000001);
+    float hist = 0;
+    for (int y = 0; y < cells_per_block_h; y++)
+    {
+        for (int x = 0; x < cells_per_block_w; x++)
+        {
+            for (int k = 0; k < hog_params_t->num_bins; k++)
+            {
+                int bins_index = (blkH + y)*n_cellsx * hog_params_t->num_bins + (blkW + x)*hog_params_t->num_bins + k;
+                int block_index = blkH * num_blockW * hog_params_t->num_bins + blkW * hog_params_t->num_bins + k;
+                if(dataType == 1){
+                    hist = min((char)(*((char *)bins_data + bins_index)) / sum, hog_params_t->threshold);
+                }else{
+                    hist = min((short)(*((short *)bins_data + bins_index)) / sum, hog_params_t->threshold);
+                }
+                void *features_ptr = (short *)features_data + block_index;
+                *(short *)features_ptr = *(short *)features_ptr + hist;
+            }
+        }
+    }
+
+}

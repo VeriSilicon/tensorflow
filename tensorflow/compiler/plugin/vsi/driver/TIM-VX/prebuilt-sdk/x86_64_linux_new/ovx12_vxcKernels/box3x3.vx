@@ -1,0 +1,88 @@
+#pragma OPENCL EXTENSION cl_viv_vx_extension : enable
+
+#include "cl_viv_vx_ext.h"
+
+_viv_uniform int height;
+
+_viv_uniform VXC_512Bits uniFilter3_0_8x4;
+_viv_uniform VXC_512Bits uniFilter3_1_4x4;
+_viv_uniform VXC_512Bits uniDataConv_2x8;
+_viv_uniform float div9;
+
+__kernel void box_3x3_u8_v1
+(
+    __read_only  image2d_t in_image,
+    __write_only image2d_t out_image
+)
+{
+    int2  coord = (int2)(get_global_id(0), get_global_id(1));
+
+    int2 coord1 = coord + (int2)(-1, -1);
+    vxc_uchar16 v0, v1;
+    VXC_ReadImage(v0, in_image, coord1, 0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+
+    int2 coord2 = coord + (int2)(-1, 0);
+    VXC_ReadImage(v1, in_image, coord2, 0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+
+    int info = VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0);
+
+    do
+    {
+        int2 coord3 = coord + (int2)(-1, 1);
+        vxc_uchar16 v2;
+        VXC_ReadImage(v2, in_image, coord3, 0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+
+        vxc_uchar16 box;
+        VXC_Filter(box, v0, v1, v2, VXC_MODIFIER_FILTER(0, 3, 0, VXC_FM_BOX, 0));
+
+        VXC_WriteImage(out_image, coord, box, info);
+
+        v0 = v1;
+        v1 = v2;
+        coord.y++;
+    }
+    while (coord.y < height) ;
+}
+
+
+__kernel void box_3x3_u8_v2
+(
+    __read_only  image2d_t in_image,
+    __write_only image2d_t out_image
+)
+{
+    int2  coord = (int2)(get_global_id(0), get_global_id(1));
+
+    int2 coord1 = coord + (int2)(-1, -1);
+    vxc_uchar16 v0, v1;
+    VXC_ReadImage(v0, in_image, coord1, 0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+
+    int2 coord2 = coord + (int2)(-1, 0);
+    VXC_ReadImage(v1, in_image, coord2, 0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+
+    int info = VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0);
+
+    do
+    {
+        int2 coord3 = coord + (int2)(-1, 1);
+        vxc_uchar16 v2;
+        VXC_ReadImage(v2, in_image, coord3, 0, VXC_MODIFIER(0, 15, 0, VXC_RM_TowardZero, 0));
+
+        vxc_short8 sum0;
+        float4 sum1;
+        int4 sum2;
+        vxc_uchar16 box;
+        VXC_DP8x4(sum0, v0, v1, VXC_MODIFIER(0, 3, 0, VXC_RM_ToNearestEven, 1), uniFilter3_0_8x4);
+        VXC_DP4x4(sum1, sum0, v2, VXC_MODIFIER(0, 3, 0, VXC_RM_ToNearestEven, 1), uniFilter3_1_4x4);
+        sum1 = sum1 * div9;
+        _viv_asm(CONV_SAT, sum2, sum1);
+        VXC_DP2x8(box, sum2, sum2, VXC_MODIFIER(0, 3, 0, VXC_RM_ToNearestEven, 1), uniDataConv_2x8);
+
+        VXC_WriteImage(out_image, coord, box, info);
+
+        v0 = v1;
+        v1 = v2;
+        coord.y++;
+    }
+    while (coord.y < height) ;
+}

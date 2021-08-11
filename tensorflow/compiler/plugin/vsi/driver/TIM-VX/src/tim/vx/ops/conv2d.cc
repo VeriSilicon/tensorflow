@@ -31,32 +31,46 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+Conv2d::Conv2d(Graph* graph, PadType padding,
+               const std::array<uint32_t, 2>& stride,
+               const std::array<uint32_t, 2>& dilation, int32_t multiplier,
+               DataLayout input_layout, DataLayout kernel_layout)
+    : Conv2d(graph, 0, padding, {0, 0}, stride, dilation, {0, 0, 0, 0},
+             multiplier, input_layout, kernel_layout) {}
+
+Conv2d::Conv2d(Graph* graph, const std::array<uint32_t, 4> pad,
+               const std::array<uint32_t, 2>& stride,
+               const std::array<uint32_t, 2>& dilation, int32_t multiplier,
+               DataLayout input_layout, DataLayout kernel_layout)
+    : Conv2d(graph, 0, PadType::AUTO, {0, 0}, stride, dilation, pad,
+             multiplier, input_layout, kernel_layout) {}
+
 Conv2d::Conv2d(Graph* graph, int32_t weights, PadType padding,
                const std::array<uint32_t, 2>& ksize,
                const std::array<uint32_t, 2>& stride,
-               const std::array<uint32_t, 2>& dilation, int32_t multiplier)
+               const std::array<uint32_t, 2>& dilation, int32_t multiplier,
+               DataLayout input_layout, DataLayout kernel_layout)
     : Conv2d(graph, weights, padding, ksize, stride, dilation, {0, 0, 0, 0},
-             multiplier) {}
+             multiplier, input_layout, kernel_layout) {}
 
 Conv2d::Conv2d(Graph* graph, int32_t weights, PadType padding,
                const std::array<uint32_t, 2>& ksize,
                const std::array<uint32_t, 2>& stride,
                const std::array<uint32_t, 2>& dilation,
-               const std::array<uint32_t, 4>& pad, int32_t multiplier)
-    : Operation(graph, VSI_NN_OP_CONV2D),
+               const std::array<uint32_t, 4>& pad, int32_t multiplier,
+               DataLayout input_layout, DataLayout kernel_layout)
+    : Operation(graph, VSI_NN_OP_CONV2D, 0, 0, input_layout),
       weights_(weights),
       padding_(padding),
       ksize_(ksize),
       stride_(stride),
       dilation_(dilation),
       pad_(pad),
-      multiplier_(multiplier) {
-  this->impl()->node()->nn_param.conv2d.ksize[0] = ksize_[0];
-  this->impl()->node()->nn_param.conv2d.ksize[1] = ksize_[1];
+      multiplier_(multiplier),
+      kernel_layout_(kernel_layout) {
   this->impl()->node()->nn_param.conv2d.stride[0] = stride_[0];
   this->impl()->node()->nn_param.conv2d.stride[1] = stride_[1];
   this->impl()->node()->nn_param.conv2d.pad_type = TranslatePadType(padding_);
-  this->impl()->node()->nn_param.conv2d.weights = weights;
   this->impl()->node()->nn_param.conv2d.group = 1;
   this->impl()->node()->nn_param.conv2d.dilation[0] = dilation_[0];
   this->impl()->node()->nn_param.conv2d.dilation[1] = dilation_[1];
@@ -65,6 +79,13 @@ Conv2d::Conv2d(Graph* graph, int32_t weights, PadType padding,
   this->impl()->node()->nn_param.conv2d.pad[2] = pad_[2];
   this->impl()->node()->nn_param.conv2d.pad[3] = pad_[3];
   this->impl()->node()->nn_param.conv2d.multiplier = multiplier_;
+}
+
+std::shared_ptr<Operation> Conv2d::Clone(std::shared_ptr<Graph>& graph) const {
+  return graph->CreateOperation<Conv2d>(
+      this->weights_, this->padding_, this->ksize_, this->stride_,
+      this->dilation_, this->pad_, this->multiplier_, this->impl_->layout_,
+      this->kernel_layout_);
 }
 
 }  // namespace ops

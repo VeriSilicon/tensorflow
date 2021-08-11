@@ -25,12 +25,26 @@
 #define TIM_VX_OPS_L2NOMALIZATION_H_
 #include "tim/vx/operation.h"
 
+/**
+ * ## L2Normalization
+ *
+ * Applies L2 normalization along the axis dimension:
+ *
+ * ```
+ * output[batch, row, col, channel] =
+ *  input[batch, row, col, channel] /
+ *  sqrt(sum_{c} pow(input[batch, row, col, c], 2))
+ * ```
+ */
+
 namespace tim {
 namespace vx {
 namespace ops {
 class L2Normalization : public Operation {
  public:
   L2Normalization(Graph* graph, int32_t axis);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   int32_t axis_;

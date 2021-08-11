@@ -32,8 +32,9 @@ namespace vx {
 namespace ops {
 
 Resize::Resize(Graph* graph, ResizeType type, float factor, bool align_corners,
-               bool half_pixel_centers, int target_height, int target_width)
-    : Operation(graph, VSI_NN_OP_RESIZE),
+               bool half_pixel_centers, int target_height, int target_width,
+               DataLayout layout)
+    : Operation(graph, VSI_NN_OP_RESIZE, 0, 0, layout),
       type_(type),
       factor_(factor),
       align_corners_(align_corners),
@@ -47,6 +48,13 @@ Resize::Resize(Graph* graph, ResizeType type, float factor, bool align_corners,
       ToVxBool(half_pixel_centers);
   impl()->node()->nn_param.resize.size[0] = target_width;
   impl()->node()->nn_param.resize.size[1] = target_height;
+}
+
+std::shared_ptr<Operation> Resize::Clone(std::shared_ptr<Graph>& graph) const {
+  return graph->CreateOperation<Resize>(
+      this->type_, this->factor_, this->align_corners_,
+      this->half_pixel_centers_, this->target_height_, this->target_width_,
+      this->impl_->layout_);
 }
 
 }  // namespace ops

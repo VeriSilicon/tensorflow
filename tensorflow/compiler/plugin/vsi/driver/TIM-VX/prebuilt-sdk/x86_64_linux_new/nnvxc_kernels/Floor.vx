@@ -1,0 +1,137 @@
+#pragma OPENCL EXTENSION cl_viv_vx_extension : enable
+
+#include "cl_viv_vx_ext.h"
+
+_viv_uniform VXC_512Bits uniConvertFstFp16Fp32_4x4;
+_viv_uniform VXC_512Bits uniConvertSecFp16Fp32_4x4;
+_viv_uniform VXC_512Bits uniConvertInt32toUint8_2x8;
+_viv_uniform float       outputScale;
+_viv_uniform float       output_offset_asymmetric;
+_viv_uniform float       inputScale;
+_viv_uniform float       input_offset_asymmetric;
+
+#define FLOOR_PROCESS(dst_type, save_type, read_type, copy_type, conv_mode, IN_SCALE, IN_OFFSET, OUT_SCALE, OUT_OFFSET, read_fun, write_fun) \
+    save_type data; \
+    read_type read_data; \
+    copy_type tmpData; \
+    vxc_float4 tmpVal1, tmpVal2; \
+    dst_type tmpOut1, tmpOut2; \
+    read_fun(read_data, input, coord, VXC_5BITOFFSET_XY(0,0), \
+    VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0)); \
+    _viv_asm(COPY, tmpData, read_data, 16); \
+    VXC_DP4x4(tmpVal1, tmpData, tmpData, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvertFstFp16Fp32_4x4); \
+    VXC_DP4x4(tmpVal2, tmpData, tmpData, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvertSecFp16Fp32_4x4); \
+    tmpVal1 = floor((tmpVal1 - IN_OFFSET) * IN_SCALE) * OUT_SCALE + OUT_OFFSET; \
+    tmpVal2 = floor((tmpVal2 - IN_OFFSET) * IN_SCALE) * OUT_SCALE + OUT_OFFSET; \
+    _viv_asm(conv_mode, tmpOut1, tmpVal1); \
+    _viv_asm(conv_mode, tmpOut2, tmpVal2); \
+    VXC_DP2x8(data, tmpOut1, tmpOut2, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), uniConvertInt32toUint8_2x8); \
+    write_fun(output, coord, data, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0)); \
+
+#define TENSOR_FLOOR(src_name, dst_name, dst_type, save_type, read_type, copy_type, conv_mode, IN_SCALE, IN_OFFSET, OUT_SCALE, OUT_OFFSET) \
+__kernel void vxcFloor_##src_name##to##dst_name \
+    ( \
+    image2d_array_t input, \
+    int type, \
+    image2d_array_t output \
+    ) \
+{ \
+    int gidx = get_global_id(0); \
+    int gidy = get_global_id(1); \
+    int gidz = get_global_id(2); \
+    int4 coord = (int4)(gidx, gidy, gidz, 0); \
+    FLOOR_PROCESS(dst_type, save_type, read_type, copy_type, conv_mode, IN_SCALE, IN_OFFSET, OUT_SCALE, OUT_OFFSET, VXC_ReadImage2DArray, VXC_WriteImage2DArray); \
+} 
+
+TENSOR_FLOOR(F16, F16, half4, vxc_short8, vxc_short8, vxc_half8, CONV, 1, 0, 1, 0)
+TENSOR_FLOOR(F16, I16, short4, vxc_short8, vxc_short8, vxc_half8, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR(F16, I8, char4, vxc_char8, vxc_short8, vxc_half8, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR(F16, U8, uchar4, vxc_uchar8, vxc_short8, vxc_half8, CONV_SAT_RTE, 1, 0, outputScale, output_offset_asymmetric)
+
+TENSOR_FLOOR(I16, I16, short4, vxc_short8, vxc_short8, vxc_short8, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR(I16, F16, half4, vxc_short8, vxc_short8, vxc_short8, CONV, 1, 0, 1, 0)
+
+TENSOR_FLOOR(I8, I8, char4, vxc_char8, vxc_char16, vxc_char16, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR(I8, F16, half4, vxc_short8, vxc_char16, vxc_char16, CONV, 1, 0, 1, 0)
+
+TENSOR_FLOOR(U8, U8, uchar4, vxc_uchar8, vxc_uchar16, vxc_uchar16, CONV_SAT_RTE, inputScale, input_offset_asymmetric, outputScale, output_offset_asymmetric)
+TENSOR_FLOOR(U8, F16, half4, vxc_short8, vxc_uchar16, vxc_uchar16, CONV, inputScale, input_offset_asymmetric, 1, 0)
+
+#define TENSOR_FLOOR_2D(src_name, dst_name, dst_type, save_type, read_type, copy_type, conv_mode, IN_SCALE, IN_OFFSET, OUT_SCALE, OUT_OFFSET) \
+__kernel void vxcFloor_##src_name##to##dst_name##_2D \
+    ( \
+    image2d_array_t input, \
+    int type, \
+    image2d_array_t output \
+    ) \
+{ \
+    int gidx = get_global_id(0); \
+    int gidy = get_global_id(1); \
+    int2 coord = (int2)(gidx, gidy); \
+    FLOOR_PROCESS(dst_type, save_type, read_type, copy_type, conv_mode, IN_SCALE, IN_OFFSET, OUT_SCALE, OUT_OFFSET, VXC_ReadImage, VXC_WriteImage); \
+}
+
+TENSOR_FLOOR_2D(F16, F16, half4, vxc_short8, vxc_short8, vxc_half8, CONV, 1, 0, 1, 0)
+TENSOR_FLOOR_2D(F16, I16, short4, vxc_short8, vxc_short8, vxc_half8, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR_2D(F16, I8, char4, vxc_char8, vxc_short8, vxc_half8, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR_2D(F16, U8, uchar4, vxc_uchar8, vxc_short8, vxc_half8, CONV_SAT_RTE, 1, 0, outputScale, output_offset_asymmetric)
+
+TENSOR_FLOOR_2D(I16, I16, short4, vxc_short8, vxc_short8, vxc_short8, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR_2D(I16, F16, half4, vxc_short8, vxc_short8, vxc_short8, CONV, 1, 0, 1, 0)
+
+TENSOR_FLOOR_2D(I8, I8, char4, vxc_char8, vxc_char16, vxc_char16, CONV_SAT_RTE, 1, 0, outputScale, 0)
+TENSOR_FLOOR_2D(I8, F16, half4, vxc_short8, vxc_char16, vxc_char16, CONV, 1, 0, 1, 0)
+
+TENSOR_FLOOR_2D(U8, U8, uchar4, vxc_uchar8, vxc_uchar16, vxc_uchar16, CONV_SAT_RTE, inputScale, input_offset_asymmetric, outputScale, output_offset_asymmetric)
+TENSOR_FLOOR_2D(U8, F16, half4, vxc_short8, vxc_uchar16, vxc_uchar16, CONV, inputScale, input_offset_asymmetric, 1, 0)
+
+
+_viv_uniform VXC_512Bits uniConvBF16toF32_Part0_2x8;
+_viv_uniform VXC_512Bits uniConvBF16toF32_Part1_2x8;
+_viv_uniform VXC_512Bits uniExtractOddData_2x8;
+
+#define FLOOR_BF16_PROCESS(read_fun, write_fun) \
+    vxc_short8 read_data, vec0; \
+    vxc_float4 tmpVal1, tmpVal2; \
+    vxc_ushort8 dst0, dst1; \
+    vxc_ushort8 vect; \
+    vxc_short8 zero = (vxc_short8)(0, 0, 0, 0, 0, 0, 0, 0); \
+    read_fun(read_data, input, coord, VXC_5BITOFFSET_XY(0,0), \
+    VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0)); \
+    VXC_DP2x8(vec0, read_data, zero, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), uniConvBF16toF32_Part0_2x8); \
+    _viv_asm(COPY, tmpVal1, vec0, 16); \
+    VXC_DP2x8(vec0, read_data, zero, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), uniConvBF16toF32_Part1_2x8); \
+    _viv_asm(COPY, tmpVal2, vec0, 16); \
+    tmpVal1 = floor(tmpVal1); \
+    tmpVal2 = floor(tmpVal2); \
+    _viv_asm(COPY, dst0, tmpVal1, 16); \
+    _viv_asm(COPY, dst1, tmpVal2, 16); \
+    VXC_DP2x8(vect, dst0, dst1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), uniExtractOddData_2x8); \
+    write_fun(output, coord, vect, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+__kernel void vxcFloor_BF16toBF16
+    (
+    image2d_array_t input,
+    int type,
+    image2d_array_t output
+    )
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int gidz = get_global_id(2);
+    int4 coord = (int4)(gidx, gidy, gidz, 0);
+    FLOOR_BF16_PROCESS(VXC_ReadImage2DArray, VXC_WriteImage2DArray);
+}
+
+__kernel void vxcFloor_BF16toBF16_2D
+    (
+    image2d_array_t input,
+    int type,
+    image2d_array_t output
+    )
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+    int2 coord = (int2)(gidx, gidy);
+    FLOOR_BF16_PROCESS(VXC_ReadImage, VXC_WriteImage);
+}

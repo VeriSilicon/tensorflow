@@ -29,9 +29,17 @@ namespace tim {
 namespace vx {
 namespace ops {
 
+/**
+ * ## Gather
+ *
+ * Gather slices from input, **axis** according to **indices**.
+ */
+
 class Gather : public Operation {
  public:
   Gather(Graph* Graph, int axis);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   int axis_;

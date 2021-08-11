@@ -30,11 +30,16 @@ namespace tim {
 namespace vx {
 namespace ops {
 
-Reverse::Reverse(Graph* graph, int32_t* axis, uint32_t axis_num)
-    : Operation(graph, VSI_NN_OP_REVERSE), axis_(axis), axis_num_(axis_num) {
-  this->impl()->node()->nn_param.reverse.axis = axis_;
-  this->impl()->node()->nn_param.reverse.axis_num = axis_num_;
+Reverse::Reverse(Graph* graph, const std::vector<int32_t>& axis)
+    : Operation(graph, VSI_NN_OP_REVERSE), axis_(axis) {
+  this->impl()->node()->nn_param.reverse.axis = axis_.data();
+  this->impl()->node()->nn_param.reverse.axis_num = axis_.size();
 }
+
+std::shared_ptr<Operation> Reverse::Clone(std::shared_ptr<Graph>& graph) const {
+  return graph->CreateOperation<Reverse>(this->axis_);
+}
+
 }  // namespace ops
 }  // namespace vx
 }  // namespace tim

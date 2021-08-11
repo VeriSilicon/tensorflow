@@ -87,6 +87,10 @@ static vsi_bool op_check
         IO_TYPE(D_U8|Q_ASYM, D_U8|Q_ASYM, D_I8|Q_DFP)
         IO_TYPE(D_U8|Q_ASYM, D_U8|Q_ASYM, D_I16|Q_DFP)
         IO_TYPE(D_U8|Q_ASYM, D_U8|Q_ASYM, D_F16)
+        IO_TYPE(D_U8, D_U8, D_U8|Q_ASYM)
+        IO_TYPE(D_U8, D_U8, D_I8|Q_DFP)
+        IO_TYPE(D_U8, D_U8, D_I16|Q_DFP)
+        IO_TYPE(D_U8, D_U8, D_F16)
     END_IO_TYPE_DECL(PRE_PROCESS_NV12)
     if(!VALIDATE_OP_IO_TYPES(PRE_PROCESS_NV12, self, inputs, self->input.num, outputs, self->output.num)) {
         char* desc = generate_op_io_types_desc(inputs,
@@ -107,7 +111,6 @@ static vsi_bool op_setup
 {
     /* TODO: Add code to comput outputs' shape. */
     vsi_nn_pre_process_nv12_param * p = NULL;
-    uint32_t axis = 0;
     uint32_t i = 0;
     p = (vsi_nn_pre_process_nv12_param *)&(self->nn_param.pre_process_nv12);
 
@@ -153,28 +156,8 @@ static vsi_bool op_setup
         }
     }
 
-    for (i = 0; i < self->nn_param.pre_process_nv12.dim_num; i++)
-    {
-        axis = self->nn_param.pre_process_nv12.perm[i];
-        if (axis != i)
-            break;
-    }
-
-    if (i == self->nn_param.pre_process_nv12.dim_num)
-        self->nn_param.pre_process_nv12.local->enable_perm = FALSE;
-    else
-        self->nn_param.pre_process_nv12.local->enable_perm = TRUE;
-
-    if (self->nn_param.pre_process_nv12.local->enable_perm == FALSE)
-    {
-        p->local->scale_x = (p->rect.width << 15) / outputs[0]->attr.size[0];
-        p->local->scale_y = (p->rect.height << 15) / outputs[0]->attr.size[1];
-    }
-    else
-    {
-        p->local->scale_x = (p->rect.width << 15) / outputs[0]->attr.size[1];
-        p->local->scale_y = (p->rect.height << 15) / outputs[0]->attr.size[2];
-    }
+    p->local->scale_x = (p->rect.width << 15) / outputs[0]->attr.size[0];
+    p->local->scale_y = (p->rect.height << 15) / outputs[0]->attr.size[1];
 
     p->local->enable_copy = ((p->local->scale_x == p->local->scale_y) && (p->local->scale_x == (1 << 15)));
 

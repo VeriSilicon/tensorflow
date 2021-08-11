@@ -1,0 +1,303 @@
+__kernel void gpuSoftMax_FP32
+    (
+    __read_only   image2d_array_t input,
+                           float  scale,
+    __write_only  image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int depth = get_image_array_size(input);
+    int4 coord_in = (int4)(x, y, 0, 0);
+    float4 maxValue;
+    float4 src, dst = {0.0};
+
+    // Find max element value which we'll use to ensure numerical stability
+    // taking advantage of the following equality:
+    // exp(x[i])/sum(exp(x[i])) == exp(x[i]+C)/sum(exp(x[i]+C))
+    maxValue = read_imagef(input, coord_in);
+    for (coord_in.z = 1; coord_in.z < depth; )
+    {
+        src = read_imagef(input, coord_in);
+        coord_in.z++;
+
+        maxValue = maxValue > src ? maxValue : src;
+    }
+
+    // Compute sum.
+    float sum = 0.f;
+    for (coord_in.z = 0; coord_in.z < depth; )
+    {
+        src = read_imagef(input, coord_in);
+        coord_in.z++;
+
+        sum += exp2((src.x - maxValue.x)*scale);
+    }
+
+    // Compute result.
+    float mult = 1.0f / sum;
+    for (coord_in.z = 0; coord_in.z < depth; )
+    {
+        src = read_imagef(input, coord_in);
+
+        dst.x = exp2((src.x - maxValue.x) * scale) * mult;
+        write_imagef(output, coord_in, dst);
+        coord_in.z++;
+    }
+}
+
+__kernel void gpuSoftMax_Dim2FP32
+    (
+    __read_only   image2d_t input,
+                           float  scale,
+    __write_only  image2d_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int width = get_image_width(input);
+    int2 coord_in = (int2)(0, x);
+    float4 maxValue;
+    float4 src, dst = {0.0};
+
+    // Find max element value which we'll use to ensure numerical stability
+    // taking advantage of the following equality:
+    // exp(x[i])/sum(exp(x[i])) == exp(x[i]+C)/sum(exp(x[i]+C))
+    maxValue = read_imagef(input, coord_in);
+    for (coord_in.x = 1; coord_in.x < width; )
+    {
+        src = read_imagef(input, coord_in);
+        coord_in.x++;
+
+        maxValue = maxValue > src ? maxValue : src;
+    }
+
+    // Compute sum.
+    float sum = 0.0f;
+    for (coord_in.x = 0; coord_in.x < width; )
+    {
+        src = read_imagef(input, coord_in);
+        coord_in.x++;
+
+        sum += exp2((src.x - maxValue.x)*scale);
+    }
+
+    // Compute result.
+    float mult = 1.0f / sum;
+    for (coord_in.x = 0; coord_in.x < width; )
+    {
+        src = read_imagef(input, coord_in);
+
+        dst.x = exp2((src.x - maxValue.x) * scale) * mult;
+        write_imagef(output, coord_in, dst);
+        coord_in.x++;
+    }
+}
+
+__kernel void gpuSoftMax_Quant8
+    (
+    __read_only  image2d_array_t input,
+                           float scale,
+                           float scaleOut,
+                           float zpOut,
+    __write_only image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int depth = get_image_array_size(input);
+    int4 coord_in = (int4)(x, y, 0, 0);
+    float4 maxValue;
+    float4 src;
+    uint4 dst = {0};
+
+    // Find max element value which we'll use to ensure numerical stability
+    // taking advantage of the following equality:
+    // exp(x[i])/sum(exp(x[i])) == exp(x[i]+C)/sum(exp(x[i]+C))
+    maxValue = convert_float4(read_imageui(input, coord_in));
+    for (coord_in.z = 1; coord_in.z < depth; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.z++;
+
+        maxValue = maxValue > src ? maxValue : src;
+    }
+
+    // Compute sum.
+    float sum = 0.f;
+    for (coord_in.z = 0; coord_in.z < depth; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.z++;
+
+        sum += exp2((src.x - maxValue.x)*scale);
+    }
+
+    // Compute result.
+    float mult = scaleOut / sum;
+    for (coord_in.z = 0; coord_in.z < depth; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+
+        dst.x = convert_uint(exp2((src.x - maxValue.x) * scale) * mult + zpOut);
+
+        write_imageui(output, coord_in, dst);
+        coord_in.z++;
+    }
+}
+
+__kernel void gpuSoftMax_Dim2Quant8
+    (
+    __read_only  image2d_t input,
+                           float scale,
+                           float scaleOut,
+                           float zpOut,
+    __write_only image2d_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int width = get_image_width(input);
+    int2 coord_in = (int2)(0, x);
+    float4 maxValue;
+    float4 src;
+    uint4 dst = {0};
+
+    // Find max element value which we'll use to ensure numerical stability
+    // taking advantage of the following equality:
+    // exp(x[i])/sum(exp(x[i])) == exp(x[i]+C)/sum(exp(x[i]+C))
+    maxValue = convert_float4(read_imageui(input, coord_in));
+    for (coord_in.x = 1; coord_in.x < width; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.x++;
+
+        maxValue = maxValue > src ? maxValue : src;
+    }
+
+    // Compute sum.
+    float sum = 0.f;
+    for (coord_in.x = 0; coord_in.x < width; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.x++;
+
+        sum += exp2((src.x - maxValue.x)*scale);
+    }
+
+    // Compute result.
+    float mult = scaleOut / sum;
+    for (coord_in.x = 0; coord_in.x < width; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+
+        dst.x = convert_uint(exp2((src.x - maxValue.x) * scale) * mult + zpOut);
+        write_imageui(output, coord_in, dst);
+        coord_in.x++;
+    }
+}
+
+
+__kernel void gpuSoftMax_Quant8toFloat
+    (
+    __read_only  image2d_array_t input,
+                           float scale,
+                           float scaleOut,
+                           float zpOut,
+    __write_only image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int depth = get_image_array_size(input);
+    int4 coord_in = (int4)(x, y, 0, 0);
+    float4 maxValue;
+    float4 src;
+    float4 dst = {0};
+
+    // Find max element value which we'll use to ensure numerical stability
+    // taking advantage of the following equality:
+    // exp(x[i])/sum(exp(x[i])) == exp(x[i]+C)/sum(exp(x[i]+C))
+    maxValue = convert_float4(read_imageui(input, coord_in));
+    for (coord_in.z = 1; coord_in.z < depth; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.z++;
+
+        maxValue = maxValue > src ? maxValue : src;
+    }
+
+    // Compute sum.
+    float sum = 0.f;
+    for (coord_in.z = 0; coord_in.z < depth; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.z++;
+
+        sum += exp2((src.x - maxValue.x)*scale);
+    }
+
+    // Compute result.
+    float mult = scaleOut / sum;
+    for (coord_in.z = 0; coord_in.z < depth; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+
+        dst.x = exp2((src.x - maxValue.x) * scale) * mult;
+
+        write_imagef(output, coord_in, dst);
+        coord_in.z++;
+    }
+}
+
+__kernel void gpuSoftMax_Dim2Quant8toFloat
+    (
+    __read_only  image2d_t input,
+                           float scale,
+                           float scaleOut,
+                           float zpOut,
+    __write_only image2d_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int width = get_image_width(input);
+    int2 coord_in = (int2)(0, x);
+    float4 maxValue;
+    float4 src;
+    float4 dst = {0};
+
+    // Find max element value which we'll use to ensure numerical stability
+    // taking advantage of the following equality:
+    // exp(x[i])/sum(exp(x[i])) == exp(x[i]+C)/sum(exp(x[i]+C))
+    maxValue = convert_float4(read_imageui(input, coord_in));
+    for (coord_in.x = 1; coord_in.x < width; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.x++;
+
+        maxValue = maxValue > src ? maxValue : src;
+    }
+
+    // Compute sum.
+    float sum = 0.f;
+    for (coord_in.x = 0; coord_in.x < width; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+        coord_in.x++;
+
+        sum += exp2((src.x - maxValue.x)*scale);
+    }
+
+    // Compute result.
+    float mult = scaleOut / sum;
+    for (coord_in.x = 0; coord_in.x < width; )
+    {
+        src = convert_float4(read_imageui(input, coord_in));
+
+        dst.x = exp2((src.x - maxValue.x) * scale) * mult;
+        write_imagef(output, coord_in, dst);
+        coord_in.x++;
+    }
+}
+

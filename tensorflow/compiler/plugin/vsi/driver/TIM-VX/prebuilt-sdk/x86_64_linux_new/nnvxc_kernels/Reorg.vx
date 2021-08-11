@@ -1,0 +1,378 @@
+#pragma OPENCL EXTENSION cl_viv_vx_extension : enable
+
+#include "cl_viv_vx_ext.h"
+
+_viv_uniform VXC_512Bits UniPackFP16even_2x8;
+_viv_uniform VXC_512Bits UniPackFP16odd_2x8;
+_viv_uniform VXC_512Bits UniPackS8even_dp2x8;
+_viv_uniform VXC_512Bits UniPackS8odd_dp2x8;
+_viv_uniform VXC_512Bits UniS8xFp16_dp2x8;
+_viv_uniform VXC_512Bits UniFp16xFp16toS8_dp2x8;
+_viv_uniform int height_in;
+_viv_uniform int height_out;
+_viv_uniform float heighto_scale;
+_viv_uniform float div_scale;
+__kernel void vxcReorg_for0str2Fp16toInt8(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_short8 img1_s16,img2_s16,img3_s16,img4_s16;
+    vxc_short8 val_s16;
+    vxc_half8 val_fp16;
+    vxc_char8 val_s8;
+    half scale_fp16;
+
+    VXC_ReadImage2DArray(img1_s16, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s16, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s16, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s16, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    _viv_asm(CONV, scale_fp16, div_scale);
+
+    VXC_DP2x8(val_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16even_2x8);
+    _viv_asm(COPY, val_fp16, val_s16, 16);
+    VXC_DP2x8(val_s8, val_fp16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), UniFp16xFp16toS8_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16odd_2x8);
+    _viv_asm(COPY, val_fp16, val_s16, 16);
+    VXC_DP2x8(val_s8, val_fp16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), UniFp16xFp16toS8_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP2x8(val_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16even_2x8);
+    _viv_asm(COPY, val_fp16, val_s16, 16);
+    VXC_DP2x8(val_s8, val_fp16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), UniFp16xFp16toS8_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16odd_2x8);
+    _viv_asm(COPY, val_fp16, val_s16, 16);
+    VXC_DP2x8(val_s8, val_fp16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_ToNearestEven, 1), UniFp16xFp16toS8_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}
+__kernel void vxcReorg_for0str2Int8toFp16(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_char8 img1_s8,img2_s8,img3_s8,img4_s8;
+    vxc_char8 val_s8;
+    vxc_half8 val_fp16;
+    half scale_fp16;
+    vxc_short8 val_s16;
+
+    VXC_ReadImage2DArray(img1_s8, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s8, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s8, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s8, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    _viv_asm(CONV, scale_fp16, div_scale);
+
+    VXC_DP2x8(val_s8, img1_s8, img2_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8even_dp2x8);
+    VXC_DP2x8(val_fp16, val_s8, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), UniS8xFp16_dp2x8);
+    _viv_asm(COPY, val_s16, val_fp16, 16);
+    VXC_WriteImage2DArray(output, posout, val_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val_s8, img1_s8, img2_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8odd_dp2x8);
+    VXC_DP2x8(val_fp16, val_s8, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), UniS8xFp16_dp2x8);
+    _viv_asm(COPY, val_s16, val_fp16, 16);
+    VXC_WriteImage2DArray(output, posout, val_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP2x8(val_s8, img3_s8, img4_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8even_dp2x8);
+    VXC_DP2x8(val_fp16, val_s8, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), UniS8xFp16_dp2x8);
+    _viv_asm(COPY, val_s16, val_fp16, 16);
+    VXC_WriteImage2DArray(output, posout, val_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val_s8, img3_s8, img4_s8, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8odd_dp2x8);
+    VXC_DP2x8(val_fp16, val_s8, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), UniS8xFp16_dp2x8);
+    _viv_asm(COPY, val_s16, val_fp16, 16);
+    VXC_WriteImage2DArray(output, posout, val_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}
+__kernel void vxcReorg_for0str2Int8toInt8(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_char8 img1_s16,img2_s16,img3_s16,img4_s16;
+    vxc_char8 val1_s16;
+
+    VXC_ReadImage2DArray(img1_s16, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s16, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s16, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s16, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8even_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8odd_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8even_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8odd_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}
+__kernel void vxcReorg_for0str2Fp16toFp16(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_short8 img1_s16,img2_s16,img3_s16,img4_s16;
+    vxc_short8 val1_s16;
+
+    VXC_ReadImage2DArray(img1_s16, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s16, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s16, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s16, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16even_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16odd_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16even_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16odd_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}
+
+__kernel void vxcReorg_for0str2Uint8toUint8(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_uchar8 img1_s16,img2_s16,img3_s16,img4_s16;
+    vxc_uchar8 val1_s16;
+
+    VXC_ReadImage2DArray(img1_s16, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s16, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s16, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s16, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8even_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8odd_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8even_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackS8odd_dp2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}
+
+_viv_uniform VXC_512Bits uniConvert1stU8SubZpToFP32_4x4;
+_viv_uniform VXC_512Bits uniConvertOddU8SubZpToFp32_4x4;
+_viv_uniform VXC_512Bits uniConvertInt32toUint8_2x8;
+_viv_uniform int input_zp;
+_viv_uniform float inOut_scale;
+_viv_uniform int output_zp;
+
+__kernel void vxcReorg_for0str2Uint8toUint8_gen(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_uchar8 img1_s16,img2_s16,img3_s16,img4_s16;
+    vxc_uchar8 val1_s16;
+
+    VXC_ReadImage2DArray(img1_s16, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s16, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s16, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s16, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    short zp0 = (short)input_zp;
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    float4 data0, data1;
+    VXC_DP4x4(data0, img1_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvert1stU8SubZpToFP32_4x4);
+    VXC_DP4x4(data1, img2_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvert1stU8SubZpToFP32_4x4);
+    data0 *= inOut_scale;
+    data1 *= inOut_scale;
+    int4 val0 = convert_int4_rte(data0 + output_zp);
+    int4 val1 = convert_int4_rte(data1 + output_zp);
+    VXC_DP2x8(val1_s16, val0, val1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1),\
+        uniConvertInt32toUint8_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    posout.z += outc;
+    VXC_DP4x4(data0, img1_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvertOddU8SubZpToFp32_4x4);
+    VXC_DP4x4(data1, img2_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvertOddU8SubZpToFp32_4x4);
+    data0 *= inOut_scale;
+    data1 *= inOut_scale;
+    val0 = convert_int4_rte(data0 + output_zp);
+    val1 = convert_int4_rte(data1 + output_zp);
+    VXC_DP2x8(val1_s16, val0, val1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1),\
+        uniConvertInt32toUint8_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP4x4(data0, img3_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvert1stU8SubZpToFP32_4x4);
+    VXC_DP4x4(data1, img4_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvert1stU8SubZpToFP32_4x4);
+    data0 *= inOut_scale;
+    data1 *= inOut_scale;
+    val0 = convert_int4_rte(data0 + output_zp);
+    val1 = convert_int4_rte(data1 + output_zp);
+    VXC_DP2x8(val1_s16, val0, val1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1),\
+        uniConvertInt32toUint8_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    posout.z += outc;
+    VXC_DP4x4(data0, img3_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvertOddU8SubZpToFp32_4x4);
+    VXC_DP4x4(data1, img4_s16, zp0, VXC_MODIFIER(0, 3, 0, VXC_RM_TowardZero, 0), uniConvertOddU8SubZpToFp32_4x4);
+    data0 *= inOut_scale;
+    data1 *= inOut_scale;
+    val0 = convert_int4_rte(data0 + output_zp);
+    val1 = convert_int4_rte(data1 + output_zp);
+    VXC_DP2x8(val1_s16, val0, val1, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1),\
+        uniConvertInt32toUint8_2x8);
+    VXC_WriteImage2DArray(output, posout, val1_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}
+
+_viv_uniform VXC_512Bits uniMulInt16andFp16_2x8;
+__kernel void vxcReorg_for0str2Int16toInt16_gen(
+    __read_only image2d_array_t   input,
+    int   stride,
+    int   outc,
+    __write_only image2d_array_t   output)
+{
+    int4 coord = (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0);
+
+    vxc_short8 img1_s16,img2_s16,img3_s16,img4_s16;
+    vxc_short8 val1_s16;
+
+    VXC_ReadImage2DArray(img1_s16, input, coord, VXC_5BITOFFSET_XY(0,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img2_s16, input, coord, VXC_5BITOFFSET_XY(8,0), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img3_s16, input, coord, VXC_5BITOFFSET_XY(0,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    VXC_ReadImage2DArray(img4_s16, input, coord, VXC_5BITOFFSET_XY(8,1), VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+
+    half scale_fp16;
+    _viv_asm(CONV, scale_fp16, div_scale);
+    int outx = coord.x >> 1;
+    int index_div = (coord.y + height_in * coord.z) >> 1;
+    int i = index_div & 1;
+    int offsetz = (i * outc) << 1;
+    int index_out = index_div - i;
+    int j = index_out * heighto_scale;
+    int outy = index_out - j * height_out;
+    int outz = offsetz + j;
+    int4 posout = (int4)(outx, outy, outz, 0);
+
+    vxc_short8 tmpOut;
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16even_2x8);
+    VXC_DP2x8(tmpOut, val1_s16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), uniMulInt16andFp16_2x8);
+    VXC_WriteImage2DArray(output, posout, tmpOut, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img1_s16, img2_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16odd_2x8);
+    VXC_DP2x8(tmpOut, val1_s16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), uniMulInt16andFp16_2x8);
+    VXC_WriteImage2DArray(output, posout, tmpOut, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    int m = index_out + 1;
+    int k = m * heighto_scale;
+    posout.y = m - k * height_out;
+    posout.z = offsetz + k;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16even_2x8);
+    VXC_DP2x8(tmpOut, val1_s16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), uniMulInt16andFp16_2x8);
+    VXC_WriteImage2DArray(output, posout, tmpOut, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+    posout.z += outc;
+    VXC_DP2x8(val1_s16, img3_s16, img4_s16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0), UniPackFP16odd_2x8);
+    VXC_DP2x8(tmpOut, val1_s16, scale_fp16, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 1), uniMulInt16andFp16_2x8);
+    VXC_WriteImage2DArray(output, posout, tmpOut, VXC_MODIFIER(0, 7, 0, VXC_RM_TowardZero, 0));
+}

@@ -1,0 +1,128 @@
+__kernel void gpuReorg2_Space2DepthFP32Block2
+    (
+    image2d_array_t input,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int inDepth = get_image_array_size(input);
+    int4 coord = (int4)(x, y, z, 0);
+    int4 coord_out = (int4)(x >> 1, y >> 1, 0, 0);
+    float4 tmp = {0.0};
+
+    tmp = read_imagef(input, coord);
+    coord_out.z = ((x & 1) + (y & 1) * 2 ) * inDepth + z;
+    write_imagef(output, coord_out, tmp);
+}
+
+__kernel void gpuReorg2_Space2DepthFP32
+    (
+    image2d_array_t input,
+    int block_size,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int inDepth = get_image_array_size(input);
+    int4 coord = (int4)(x, y, z, 0);
+    short short_blockSize = convert_short(block_size);
+    int4 coord_out = (int4)(convert_short(x)/short_blockSize, convert_short(y)/short_blockSize, 0, 0);
+    float4 tmp = {0.0};
+
+    tmp = read_imagef(input, coord);
+    coord_out.z = ((x - coord_out.x * block_size) + (y - coord_out.y * block_size) * block_size) * inDepth + z;
+    write_imagef(output, coord_out, tmp);
+}
+
+__kernel void gpuReorg2_Space2DepthQuant8Block2
+    (
+    image2d_array_t input,
+    float scale,
+    int   zpIn,
+    int   zpOut,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int inDepth = get_image_array_size(input);
+    int4 coord = (int4)(x, y, z, 0);
+    int4 coord_out = (int4)(x >> 1, y >> 1, 0, 0);
+    uint4 tmp = {0};
+
+    tmp = read_imageui(input, coord);
+    coord_out.z = ((x & 1) + (y & 1) * 2 ) * inDepth + z;
+    write_imageui(output, coord_out, tmp);
+}
+
+__kernel void gpuReorg2_Space2DepthQuant8
+    (
+    image2d_array_t input,
+    int block_size,
+    float scale,
+    int   zpIn,
+    int   zpOut,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int inDepth = get_image_array_size(input);
+    int4 coord = (int4)(x, y, z, 0);
+    short short_blockSize = convert_short(block_size);
+    int4 coord_out = (int4)(convert_short(x)/short_blockSize, convert_short(y)/short_blockSize, 0, 0);
+    uint4 tmp = {0};
+
+    tmp = read_imageui(input, coord);
+    coord_out.z = ((x - coord_out.x * block_size) + (y - coord_out.y * block_size) * block_size) * inDepth + z;
+    write_imageui(output, coord_out, tmp);
+}
+
+__kernel void gpuReorg2_Space2DepthQuant16Block2
+    (
+    image2d_array_t input,
+    float scale,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int inDepth = get_image_array_size(input);
+    int4 coord = (int4)(x, y, z, 0);
+    int4 coord_out = (int4)(x >> 1, y >> 1, 0, 0);
+    int4 tmp = {0};
+
+    tmp = read_imagei(input, coord);
+    coord_out.z = ((x & 1) + (y & 1) * 2 ) * inDepth + z;
+    write_imagei(output, coord_out, tmp);
+}
+
+__kernel void gpuReorg2_Space2DepthQuant16
+    (
+    image2d_array_t input,
+    int block_size,
+    float scale,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int inDepth = get_image_array_size(input);
+    int4 coord = (int4)(x, y, z, 0);
+    short short_blockSize = convert_short(block_size);
+    int4 coord_out = (int4)(convert_short(x)/short_blockSize, convert_short(y)/short_blockSize, 0, 0);
+    int4 tmp = {0};
+
+    tmp = read_imagei(input, coord);
+    tmp.x = floor(tmp.x*scale + 0.5);
+    coord_out.z = ((x - coord_out.x * block_size) + (y - coord_out.y * block_size) * block_size) * inDepth + z;
+    write_imagei(output, coord_out, tmp);
+}

@@ -29,16 +29,28 @@ namespace tim {
 namespace vx {
 namespace ops {
 
-#define DELCATE_LOGICAL_OP(NAME)           \
-  class Logical##NAME : public Operation { \
-   public:                                 \
-    Logical##NAME(Graph* graph);           \
+/**
+ * ## And
+ *
+ * Returns the truth value of x AND y element-wise. This operation supports broadcasting.
+ *
+ * ## Or
+ *
+ * Returns the truth value of x OR y element-wise. This operation supports broadcasting.
+ */
+
+#define DECLARE_LOGICAL_OP(NAME)                       \
+  class Logical##NAME : public Operation {             \
+   public:                                             \
+    Logical##NAME(Graph* graph);                       \
+    std::shared_ptr<Operation> Clone(                  \
+        std::shared_ptr<Graph>& graph) const override; \
   };
 
-DELCATE_LOGICAL_OP(And);
-DELCATE_LOGICAL_OP(Or);
+DECLARE_LOGICAL_OP(And);
+DECLARE_LOGICAL_OP(Or);
 
-#undef DELCATE_LOGICAL_OP
+#undef DECLARE_LOGICAL_OP
 
 }  // namespace ops
 }  // namespace vx

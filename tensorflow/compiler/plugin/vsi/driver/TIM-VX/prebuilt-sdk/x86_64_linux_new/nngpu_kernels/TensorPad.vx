@@ -1,0 +1,37 @@
+__kernel void gpuTensorPad_FP32(
+    image2d_array_t input,
+    int padLeft,
+    int padTop,
+    image2d_array_t output)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int4 coord_out = (int4)(x, y, z, 0);
+    int inx = x - padLeft;
+    int iny = y - padTop;
+    int4 coord_in = (int4)(inx, iny, z, 0);
+    float4 tmp = {0.0};
+
+    tmp = read_imagef(input, coord_in);
+    write_imagef(output, coord_out, tmp);
+}
+
+__kernel void gpuTensorPad_Quant8(
+    image2d_array_t input,
+    int padLeft,
+    int padTop,
+    image2d_array_t output)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int4 coord_out = (int4)(x, y, z, 0);
+    int inx = x - padLeft;
+    int iny = y - padTop;
+    int4 coord_in = (int4)(inx, iny, z, 0);
+    uint4 tmp = {0.0};
+
+    tmp = read_imageui(input, coord_in);
+    write_imageui(output, coord_out, tmp);
+}

@@ -1,0 +1,17 @@
+__kernel void gpuFloor_FP32
+    (
+    image2d_array_t input,
+    int type,
+    image2d_array_t output
+    )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    int z = get_global_id(2);
+    int4 coord = (int4)(x, y, z, 0);
+    float4 tmpOut = {0.0}, tmp = {0.0};
+
+    tmp = read_imagef(input, coord);
+    tmpOut.x = floor(tmp.x);
+    write_imagef(output, coord, tmpOut);
+}

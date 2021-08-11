@@ -28,9 +28,23 @@
 namespace tim {
 namespace vx {
 namespace ops {
+
+/**
+ * ## FullyConnected
+ *
+ * Denotes a fully (densely) connected layer, which connects all elements in the
+ * input tensor with each element in the output tensor. 
+ * 
+ * - axis: Describes the axis of the inputs when coerced to 2D.
+ * - weights: the output channel number for weight tensor.
+ */
+
 class FullyConnected : public Operation {
  public:
+  FullyConnected(Graph* graph, uint32_t axis);
   FullyConnected(Graph* graph, uint32_t axis, uint32_t weights);
+
+  std::shared_ptr<Operation> Clone(std::shared_ptr<Graph>& graph) const override;
 
  protected:
   uint32_t axis_;
