@@ -96,11 +96,12 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
  
         auto tensor = visitor_->evaluate(*computation, arg_literals);
 
-        void* result_data;
-        tensor->CopyDataFromTensor(result_data);
         auto root_instr = computation->root_instruction();
-        se::DeviceMemoryBase devMem(result_data,
-            ShapeUtil::ByteSizeOf(root_instr->shape()));
+        auto output_size = ShapeUtil::ByteSizeOf(root_instr->shape());
+        LOG(INFO) << "Output Size:" << output_size;
+
+        se::DeviceMemoryBase devMem = executor_->Allocate(output_size, 0);
+        tensor->CopyDataFromTensor(devMem.opaque());
 
         /*for vsi, memory layout always is dim 0 as major */
         auto shape = root_instr->shape();

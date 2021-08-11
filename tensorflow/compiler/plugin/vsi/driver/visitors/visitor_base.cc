@@ -38,6 +38,7 @@ limitations under the License.
 #include "tim/vx/ops/conv2d.h"
 #include "tim/vx/ops/elementwise.h"
 #include "tim/vx/ops/reshape.h"
+#include "tim/vx/ops/reverse.h"
 #include "tim/vx/ops/transpose.h"
 #include "tim/transform/layout_inference.h"
 using tensorflow::str_util::StartsWith;
@@ -183,6 +184,7 @@ Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
 
     std::vector<uint32_t> tmpdims;
     auto input_minor_to_major = input->shape().layout().minor_to_major();
+
     for(auto d: input_minor_to_major){
         tmpdims.push_back(transpose->dimensions(d));
     }
@@ -202,6 +204,48 @@ Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
 
     //evaluatedDevMem_[transpose] = executor_->setTensor(out_tensor);
     kVsiRunTensorContainer_[transpose] = out_tensor;
+    return Status::OK();
+}
+
+Status BaseVisitor::HandleReverse(HloInstruction* hlo){
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    const HloInstruction* input = hlo->operand(0);
+    const Shape& in_shape = input->shape();
+    const Shape& out_shape = hlo->shape();
+
+    TF_CHECK_OK(ShapeUtil::ValidateShape(in_shape));
+    TF_CHECK_OK(ShapeUtil::ValidateShape(out_shape));
+    CHECK(ShapeUtil::SameElementType(in_shape, out_shape));
+    // CHECK_EQ(hlo->dimensions().size(), in_shape.rank());
+    CHECK_EQ(in_shape.rank(), out_shape.rank());
+
+    auto in_tensor = GetEvaluatedTensorFor(input);
+    auto out_tensor = createTensorFromShape(out_shape, tim::vx::TensorAttribute::OUTPUT);
+
+    std::vector<uint32_t> tmpdims;
+    auto input_minor_to_major = input->shape().layout().minor_to_major();
+
+    for(auto d: input_minor_to_major){
+        tmpdims.push_back(hlo->dimensions(d));
+    }
+
+    std::vector<int32_t> dims;
+    for(auto d: tmpdims){
+        uint32 i = 0;
+        for(i = 0; i < input_minor_to_major.size(); i++){
+            if(input_minor_to_major[i] == d) {
+                dims.push_back(i);
+            }
+        }
+    }
+
+    // auto dims0 = hlo->dimensions();
+    // std::vector<int32_t> dims = convert_array<std::vector<int32_t>>(dims0);
+    auto reverseOp = graph_->CreateOperation<tim::vx::ops::Reverse>(dims);
+    reverseOp->BindInput(in_tensor).BindOutput(out_tensor);
+
+    //evaluatedDevMem_[transpose] = executor_->setTensor(out_tensor);
+    kVsiRunTensorContainer_[hlo] = out_tensor;
     return Status::OK();
 }
 
@@ -351,5 +395,5 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
     kVsiRunTensorContainer_[conv] = out_tensor;
     return Status::OK();
 }
-}  // namespace poplarplugin
+}  // namespace vsiplugin
 }  // namespace xla

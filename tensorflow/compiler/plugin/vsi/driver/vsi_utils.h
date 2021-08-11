@@ -21,16 +21,25 @@ namespace xla{
 
 namespace vsiplugin{
 
-    using int64 = tensorflow::int64;
-    using int8  = tensorflow::int8;
-    using int16 = tensorflow::int16;
-    using int32 = tensorflow::int32;
-    using int64 = tensorflow::int64;
+using int64 = tensorflow::int64;
+using int8  = tensorflow::int8;
+using int16 = tensorflow::int16;
+using int32 = tensorflow::int32;
+using int64 = tensorflow::int64;
+using uint8 = tensorflow::uint8;
+using uint16 = tensorflow::uint16;
+using uint32 = tensorflow::uint32;
+using uint64 = tensorflow::uint64;
 
-    using uint8 = tensorflow::uint8;
-    using uint16 = tensorflow::uint16;
-    using uint32 = tensorflow::uint32;
-    using uint64 = tensorflow::uint64;
+template <typename To, typename From>
+To convert_array(const From& from) {
+  To out;
+  for (const auto& e : from) {
+    out.push_back(e);
+  }
+  return out;
+}
+
 } // namespace vsiplugin
 } // namespace xla
 #endif

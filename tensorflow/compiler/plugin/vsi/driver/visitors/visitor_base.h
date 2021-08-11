@@ -177,6 +177,8 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleConvolution(HloInstruction* hlo) override;
 
+  Status HandleReverse(HloInstruction* hlo) override;
+
 #define HANDLE_AS_HLO_OP(Name) \
   Status Name(HloInstruction* inst) override { return HandleHloOp(inst); }
 
@@ -218,7 +220,6 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleSelectAndScatter)
   UNIMPLEMENTED(HandleWhile)
   UNIMPLEMENTED(HandlePad)
-  UNIMPLEMENTED(HandleReverse)
   UNIMPLEMENTED(HandleSort)
   UNIMPLEMENTED(HandleReduce)
   UNIMPLEMENTED(HandleBitcast)

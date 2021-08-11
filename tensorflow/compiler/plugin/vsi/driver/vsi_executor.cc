@@ -56,7 +56,7 @@ void *VsiExecutor::GetSubBuffer(se::DeviceMemoryBase *parent, uint64 offset, uin
 }
 
 void VsiExecutor::Deallocate(se::DeviceMemoryBase *mem) {
-    //free(mem->opaque());
+    free(mem->opaque());
     // auto t = static_cast<tim::vx::Tensor*>(mem->opaque());
     // std::unique_lock<std::mutex> lock(mutex_);
     // for(auto it = kVsiTensorContainer.begin(); it != kVsiTensorContainer.end(); it++){
