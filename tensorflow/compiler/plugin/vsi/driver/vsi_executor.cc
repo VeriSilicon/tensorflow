@@ -30,20 +30,24 @@ const int invalid_index = 0x7fffff;
 VsiExecutor::VsiExecutor(std::shared_ptr<tim::vx::Context>vsiCtx, const int device_ordinal, se::PluginConfig pluginConfig)
  : kVsiContext(vsiCtx), ordinal_(device_ordinal), plugConfig_(pluginConfig) {
      std::unique_lock<std::mutex> lock(mutex_);
-     kVsiGraphContainer[ordinal_] = kVsiContext->CreateGraph();
+     //kVsiGraphContainer[ordinal_] = kVsiContext->CreateGraph();
  }
 
-VsiExecutor::~VsiExecutor() {}
+VsiExecutor::~VsiExecutor() {
+    LOG(FATAL) << "Not Implemented";
+}
 
 //TODO: temprarily use 1d tensor
 se::DeviceMemoryBase VsiExecutor::Allocate(uint64 size, int64 memory_space){
-    tim::vx::ShapeType input_shape({size});
-    tim::vx::Quantization input_quant(tim::vx::QuantType::ASYMMETRIC, 1.0f, 0);
-    tim::vx::TensorSpec input_spec(tim::vx::DataType::UINT8, input_shape,
-                                    tim::vx::TensorAttribute::VARIABLE, input_quant);
-    std::unique_lock<std::mutex> lock(mutex_);
-    kVsiTensorContainer.push_back( kVsiGraphContainer[ordinal_]->CreateTensor(input_spec) );
-    return se::DeviceMemoryBase( kVsiTensorContainer.back().get(), size);
+    // tim::vx::ShapeType input_shape({size});
+    // tim::vx::Quantization input_quant(tim::vx::QuantType::ASYMMETRIC, 1.0f, 0);
+    // tim::vx::TensorSpec input_spec(tim::vx::DataType::UINT8, input_shape,
+    //                                 tim::vx::TensorAttribute::VARIABLE, input_quant);
+    // std::unique_lock<std::mutex> lock(mutex_);
+    // kVsiTensorContainer.push_back( kVsiGraphContainer[ordinal_]->CreateTensor(input_spec) );
+    void* data = malloc(size);
+    return se::DeviceMemoryBase(data, size);
+    //return se::DeviceMemoryBase( kVsiTensorContainer.back().get(), size);
 }
 
 void *VsiExecutor::GetSubBuffer(se::DeviceMemoryBase *parent, uint64 offset, uint64 size) {
@@ -52,14 +56,15 @@ void *VsiExecutor::GetSubBuffer(se::DeviceMemoryBase *parent, uint64 offset, uin
 }
 
 void VsiExecutor::Deallocate(se::DeviceMemoryBase *mem) {
-    auto t = static_cast<tim::vx::Tensor*>(mem->opaque());
-    std::unique_lock<std::mutex> lock(mutex_);
-    for(auto it = kVsiTensorContainer.begin(); it != kVsiTensorContainer.end(); it++){
-        if(it->get() == t){
-            it = kVsiTensorContainer.erase(it);
-            break;
-        }
-    }
+    //free(mem->opaque());
+    // auto t = static_cast<tim::vx::Tensor*>(mem->opaque());
+    // std::unique_lock<std::mutex> lock(mutex_);
+    // for(auto it = kVsiTensorContainer.begin(); it != kVsiTensorContainer.end(); it++){
+    //     if(it->get() == t){
+    //         it = kVsiTensorContainer.erase(it);
+    //         break;
+    //     }
+    // }
 }
 
 void *VsiExecutor::HostMemoryAllocate(uint64 size){
@@ -91,17 +96,29 @@ port::Status VsiExecutor::SynchronousMemSet(se::DeviceMemoryBase *location, int 
 }
 port::Status VsiExecutor::SynchronousMemcpy(se::DeviceMemoryBase *gpu_dst,
                                 const void *host_src, uint64 size){
-    auto t = static_cast<tim::vx::Tensor *>(gpu_dst->opaque());
-    if(t != nullptr && size > 0)
-        t->CopyDataToTensor(host_src, size);
+    auto t = gpu_dst->opaque();
+    if(host_src == nullptr){
+        LOG(FATAL) << "The ponit is nullprt, Something wrong !!";
+    }else {
+        memcpy(t,host_src,size);
+    }               
+    // auto t = static_cast<tim::vx::Tensor *>(gpu_dst->opaque());
+    // if(t != nullptr && size > 0)
+    //     t->CopyDataToTensor(host_src, size);
     return port::Status::OK();
 }
 port::Status VsiExecutor::SynchronousMemcpy(void *host_dst,
                                 const se::DeviceMemoryBase &gpu_src,
                                 uint64 size){
-    auto t = static_cast<tim::vx::Tensor*>(const_cast<void *>(gpu_src.opaque()));
-    if(t != nullptr && size > 0)
-        t->CopyDataFromTensor(host_dst);
+    auto t = gpu_src.opaque();
+    if(t == nullptr){
+        LOG(FATAL) << "The ponit is nullprt, Something wrong !!";
+    }else {
+        memcpy(host_dst,t,size);
+    }
+    // auto t = static_cast<tim::vx::Tensor*>(const_cast<void *>(gpu_src.opaque()));
+    // if(t != nullptr && size > 0)
+    //     t->CopyDataFromTensor(host_dst);
     return port::Status::OK();
 }
 port::Status VsiExecutor::SynchronousMemcpyDeviceToDevice(

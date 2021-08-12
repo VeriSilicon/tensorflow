@@ -39,7 +39,7 @@ namespace vsiplugin{
 
 VsiExecutable::VsiExecutable(std::shared_ptr<HloModule> hlo_module,
         VsiExecutor *executor) :
-        Executable( std::move(hlo_module),
+        Executable(hlo_module,
                     /*hlo_profile_printer_data=*/nullptr,
                     /*hlo_profile_index_map=*/nullptr),
         visitor_(std::move(std::make_unique<BaseVisitor>(executor))),
@@ -93,10 +93,13 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                                     run_options->stream(), argument_buffers[p]));
             arg_literals.push_back(std::move(arg_literal));
         }
-
+ 
         auto tensor = visitor_->evaluate(*computation, arg_literals);
+
+        void* result_data;
+        tensor->CopyDataFromTensor(result_data);
         auto root_instr = computation->root_instruction();
-        se::DeviceMemoryBase devMem(tensor.get(),
+        se::DeviceMemoryBase devMem(result_data,
             ShapeUtil::ByteSizeOf(root_instr->shape()));
 
         /*for vsi, memory layout always is dim 0 as major */

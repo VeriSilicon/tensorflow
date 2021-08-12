@@ -39,7 +39,7 @@ limitations under the License.
 #include "tim/vx/ops/elementwise.h"
 #include "tim/vx/ops/reshape.h"
 #include "tim/vx/ops/transpose.h"
-
+#include "tim/transform/layout_inference.h"
 using tensorflow::str_util::StartsWith;
 
 namespace xla {
@@ -56,6 +56,7 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::evaluate(
     std::vector<Literal>& argument_literals){
     arg_literals_ = std::move(argument_literals);
     computation.Accept(this);
+    graph_->PrintGraph();
     if (!graph_->Compile()) {
         LOG(FATAL) << "Compile graph fail.";
         return nullptr;
@@ -114,29 +115,29 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
 }
 
 Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
-    switch (hlo->opcode())
-    {
-        case HloOpcode::kAdd:{
-            LOG(INFO) << "PROCESS add";
-            auto shape = hlo->shape();
-            const HloInstruction* lhs = hlo->operand(0);
-            const HloInstruction* rhs = hlo->operand(1);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+    // switch (hlo->opcode())
+    // {
+    //     case HloOpcode::kAdd:{
+    //         LOG(INFO) << "PROCESS add";
+    //         auto shape = hlo->shape();
+    //         const HloInstruction* lhs = hlo->operand(0);
+    //         const HloInstruction* rhs = hlo->operand(1);
+    //         TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+    //         TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-            auto add = graph_->CreateOperation<tim::vx::ops::Add>();
-            (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+    //         auto lhs_tensor = GetEvaluatedTensorFor(lhs);
+    //         auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+    //         auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    //         auto add = graph_->CreateOperation<tim::vx::ops::Add>();
+    //         (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-            evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-            break;
-        }
-        default:
-            LOG(INFO) << "not has benn implement; opcode:" << hlo->opcode();
-            break;
-    }
+    //         //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+    //         break;
+    //     }
+    //     default:
+    //         LOG(INFO) << "not has benn implement; opcode:" << hlo->opcode();
+    //         break;
+    // }
     return Status::OK();
 }
 
@@ -151,17 +152,17 @@ Status BaseVisitor::Unimplemented(HloInstruction* inst) {
 
 // VSI TODO::it is just hack, need to implement
 Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
-    const HloInstruction* input = hlo->operand(0);
-    auto it = evaluatedDevMem_.find(input);
-    evaluatedDevMem_[hlo] = it->second;
+    // const HloInstruction* input = hlo->operand(0);
+    // auto it = evaluatedDevMem_.find(input);
+    // evaluatedDevMem_[hlo] = it->second;
     return Status::OK();
 }
 
 // VSI TODO::it is just hack, need to implement
 Status BaseVisitor::HandleTuple(HloInstruction* hlo){
-    const HloInstruction* input = hlo->operand(0);
-    auto it = evaluatedDevMem_.find(input);
-    evaluatedDevMem_[hlo] = it->second;
+    // const HloInstruction* input = hlo->operand(0);
+    // auto it = evaluatedDevMem_.find(input);
+    // evaluatedDevMem_[hlo] = it->second;
     return Status::OK();
 }
 
@@ -199,25 +200,26 @@ Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
     auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(dims);
     transposeOp->BindInput(in_tensor).BindOutput(out_tensor);
 
-    evaluatedDevMem_[transpose] = executor_->setTensor(out_tensor);
+    //evaluatedDevMem_[transpose] = executor_->setTensor(out_tensor);
+    kVsiRunTensorContainer_[transpose] = out_tensor;
     return Status::OK();
 }
 
 Status BaseVisitor::HandleReshape(HloInstruction* hlo){
-    LOG(INFO) << "PROCESS " << __FUNCTION__;
-    auto shape = hlo->shape();
-    const HloInstruction* input = hlo->operand(0);
-    auto in_tensor = GetEvaluatedTensorFor(input);
-    auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    // LOG(INFO) << "PROCESS " << __FUNCTION__;
+    // auto shape = hlo->shape();
+    // const HloInstruction* input = hlo->operand(0);
+    // auto in_tensor = GetEvaluatedTensorFor(input);
+    // auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
-    std::vector<uint32_t> dims;
-    for(auto d: shape.dimensions()){
-        dims.push_back(d);
-    }
-    auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
-    (*reshapeOp).BindInput(in_tensor).BindOutput(out_tensor);
+    // std::vector<uint32_t> dims;
+    // for(auto d: shape.dimensions()){
+    //     dims.push_back(d);
+    // }
+    // auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
+    // (*reshapeOp).BindInput(in_tensor).BindOutput(out_tensor);
 
-    evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+    // evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
     return Status::OK();
 }
 
@@ -233,29 +235,48 @@ Status BaseVisitor::HandleParameter(HloInstruction* hlo){
         << ", but input literal shape is: "
         << ShapeUtil::HumanStringWithLayout(input_literal.shape());
 
-    if(evaluatedDevMem_.find(hlo) == evaluatedDevMem_.end()){
-        ShapeIndex shapeIndex({});
-        const float* buffer = input_literal.data<float>(shapeIndex).data();
-        auto timTensor = createTensorFromShape(input_literal.shape());
-        timTensor->CopyDataToTensor((void *)buffer);
-        evaluatedDevMem_[hlo] = executor_->setTensor(timTensor);
-    }
+        if(kVsiRunTensorContainer_.find(hlo) == kVsiRunTensorContainer_.end()){
+            ShapeIndex shapeIndex({});
+            void *buffer = input_literal.untyped_data(shapeIndex);
+            auto timTensor = createTensorFromShape(input_literal.shape());
+            timTensor->CopyDataToTensor(buffer);
+            kVsiRunTensorContainer_[hlo] = timTensor;
+        }
+    // if(evaluatedDevMem_.find(hlo) == evaluatedDevMem_.end()){
+    //     ShapeIndex shapeIndex({});
+    //     //const float* buffer = input_literal.data<float>(shapeIndex).data();
+    //     void *buffer = input_literal.untyped_data(shapeIndex);
+    //     auto timTensor = createTensorFromShape(input_literal.shape());
+    //     timTensor->CopyDataToTensor(buffer);
+    //     //evaluatedDevMem_[hlo] = executor_->setTensor(timTensor);
+    // }
 
     return Status::OK();
 }
 
 Status BaseVisitor::HandleConstant(HloInstruction* hlo){
     LOG(INFO) << "PROCESS Constant";
-    if(evaluatedDevMem_.find(hlo) == evaluatedDevMem_.end()){
+
+    if(kVsiRunTensorContainer_.find(hlo) == kVsiRunTensorContainer_.end()){
         ShapeIndex shapeIndex({});
 
         auto& literal = hlo->literal();
-        const float* buffer = literal.data<float>(shapeIndex).data();
+        const void *buffer = literal.untyped_data(shapeIndex);
         auto timTensor = createTensorFromShape(literal.shape());
-        timTensor->CopyDataToTensor((void *)buffer);
-
-        evaluatedDevMem_[hlo] = executor_->setTensor(timTensor);
+        timTensor->CopyDataToTensor(buffer);
+        kVsiRunTensorContainer_[hlo] = timTensor;
     }
+
+    // if(evaluatedDevMem_.find(hlo) == evaluatedDevMem_.end()){
+    //     ShapeIndex shapeIndex({});
+
+    //     auto& literal = hlo->literal();
+    //     const float* buffer = literal.data<float>(shapeIndex).data();
+    //     auto timTensor = createTensorFromShape(literal.shape());
+    //     timTensor->CopyDataToTensor((void *)buffer);
+
+    //     evaluatedDevMem_[hlo] = executor_->setTensor(timTensor);
+    // }
 
     return Status::OK();
 }
@@ -327,7 +348,7 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
     auto out_tensor = createTensorFromShape(conv->shape(), tim::vx::TensorAttribute::OUTPUT);
     convOp->BindInput(input).BindInput(weight).BindOutput(out_tensor);
 
-    evaluatedDevMem_[conv] = executor_->setTensor(out_tensor);
+    kVsiRunTensorContainer_[conv] = out_tensor;
     return Status::OK();
 }
 }  // namespace poplarplugin

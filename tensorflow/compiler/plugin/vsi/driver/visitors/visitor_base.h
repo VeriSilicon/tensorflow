@@ -42,7 +42,7 @@ namespace vsiplugin {
 class BaseVisitor : public DfsHloVisitor {
  public:
     BaseVisitor(VsiExecutor* executor) : executor_(executor),
-    graph_(executor->getGraph()) {};
+    graph_(executor->getContext()->CreateGraph()) {};
 
     std::shared_ptr<tim::vx::Tensor> createTensorFromShape(const Shape &shape,
         tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
@@ -74,6 +74,7 @@ class BaseVisitor : public DfsHloVisitor {
     }
 
   static tim::vx::DataType convertTfPrimitiveTypeToTim(xla::PrimitiveType xlaType){
+    std::cout<<"#############"<<xlaType<<std::endl;
       switch(xlaType){
         case S8:{
           return tim::vx::DataType::INT8;
@@ -96,8 +97,14 @@ class BaseVisitor : public DfsHloVisitor {
         case F32:{
           return tim::vx::DataType::FLOAT32;
         }
+        case BF16:{
+          return tim::vx::DataType::FLOAT16;
+        }
         case F16:{
           return tim::vx::DataType::FLOAT16;
+        }
+        case F64:{
+          return tim::vx::DataType::FLOAT32;
         }
         default:
           LOG(FATAL)<<"not supported datat type";
@@ -143,10 +150,11 @@ class BaseVisitor : public DfsHloVisitor {
     }
 
     const std::shared_ptr<tim::vx::Tensor> GetEvaluatedTensorFor(const HloInstruction* hlo) {
-        auto it = evaluatedDevMem_.find(hlo);
-        CHECK(it != evaluatedDevMem_.end())
+        //return createTensorFromShape(hlo->shape());
+        auto it = kVsiRunTensorContainer_.find(hlo);
+        CHECK(it != kVsiRunTensorContainer_.end())
             << "could not find evaluated value for: " << hlo->ToString();
-        return executor_->getTensor( it->second );
+        return kVsiRunTensorContainer_[hlo];
     }
 
   // Called by HandleElementwiseBinarythe FinishVisit.
@@ -259,7 +267,8 @@ private:
     //       handle.
     std::mutex mutex_;
     std::unordered_map<const HloInstruction *, Literal> evaluated_ TF_GUARDED_BY(mutex_);
-    std::unordered_map<const HloInstruction *, int> evaluatedDevMem_ TF_GUARDED_BY(mutex_);
+    std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
+        kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
     std::vector<Literal> arg_literals_;
     std::shared_ptr<tim::vx::Graph> graph_;
 };

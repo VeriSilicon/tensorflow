@@ -43,41 +43,44 @@ public:
     explicit VsiExecutor(std::shared_ptr<tim::vx::Context>vsiCtx, const int device_ordinal, se::PluginConfig pluginConfig);
     ~VsiExecutor();
 
-    std::shared_ptr<tim::vx::Graph> getGraph(int ordinal = 0) {
-        if(kVsiGraphContainer.find(ordinal) != kVsiGraphContainer.end())
-            return kVsiGraphContainer[ordinal];
-        return nullptr;
-    }
+    // std::shared_ptr<tim::vx::Graph> getGraph(int ordinal = 0) {
+    //     // if(kVsiGraphContainer.find(ordinal) != kVsiGraphContainer.end())
+    //     //     return kVsiGraphContainer[ordinal];
+    //     return nullptr;
+    // }
     std::shared_ptr<tim::vx::Context> getContext() { return kVsiContext; }
-    std::shared_ptr<tim::vx::Tensor> getTensor(int index) {
-        if(index > kVsiTensorContainer.size()){
-            return nullptr;
-        }
-        return kVsiTensorContainer[index];
-    }
-    int getTensorIndex(tim::vx::Tensor *t){
-        auto it = std::find_if(kVsiTensorContainer.begin(), kVsiTensorContainer.end(),
-        [&](std::shared_ptr<tim::vx::Tensor> p){
-            return p.get() == t;
-        });
-        if(it != kVsiTensorContainer.end()){
-            return it - kVsiTensorContainer.begin();
-        }
-        return invalid_index;
-    }
 
-    int setTensor(std::shared_ptr<tim::vx::Tensor> t){
-        std::unique_lock<std::mutex> lock(mutex_);
-        kVsiTensorContainer.push_back(t);
-        return kVsiTensorContainer.size() - 1;
-    }
+    // std::shared_ptr<tim::vx::Tensor> getTensor(int index) {
+    //     // if(index > kVsiTensorContainer.size()){
+    //     //     return nullptr;
+    //     // }
+    //     // return kVsiTensorContainer[index];
+    //     return nullptr;
+    // }
+    // int getTensorIndex(tim::vx::Tensor *t){
+    //     // auto it = std::find_if(kVsiTensorContainer.begin(), kVsiTensorContainer.end(),
+    //     // [&](std::shared_ptr<tim::vx::Tensor> p){
+    //     //     return p.get() == t;
+    //     // });
+    //     // if(it != kVsiTensorContainer.end()){
+    //     //     return it - kVsiTensorContainer.begin();
+    //     // }
+    //     return invalid_index;
+    // }
+
+    // int setTensor(std::shared_ptr<tim::vx::Tensor> t){
+    //     // std::unique_lock<std::mutex> lock(mutex_);
+    //     // kVsiTensorContainer.push_back(t);
+    //     // return kVsiTensorContainer.size() - 1;
+    //     return 0;
+    // }
 
     se::internal::StreamExecutorInterface *GetUnderlyingExecutor() override { return this; }
     port::Status Init(int device_ordinal,
                             se::DeviceOptions device_options) override {
-        if(kVsiGraphContainer.find(device_ordinal) == kVsiGraphContainer.end()){
-            kVsiGraphContainer[device_ordinal] = kVsiContext->CreateGraph();
-        }
+        // if(kVsiGraphContainer.find(device_ordinal) == kVsiGraphContainer.end()){
+        //     kVsiGraphContainer[device_ordinal] = kVsiContext->CreateGraph();
+        // }
         return port::Status::OK();
     }
 
@@ -200,8 +203,6 @@ private:
     int ordinal_;
     se::PluginConfig plugConfig_;
     std::shared_ptr<tim::vx::Context> kVsiContext;
-    std::unordered_map<int, std::shared_ptr<tim::vx::Graph>> kVsiGraphContainer TF_GUARDED_BY(mutex_);
-    std::vector<std::shared_ptr<tim::vx::Tensor>> kVsiTensorContainer TF_GUARDED_BY(mutex_);
     SE_DISALLOW_COPY_AND_ASSIGN(VsiExecutor);
 };
 
