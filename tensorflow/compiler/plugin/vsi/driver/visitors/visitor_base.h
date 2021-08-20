@@ -48,10 +48,15 @@ class BaseVisitor : public DfsHloVisitor {
         tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
         tim::vx::ShapeType timShape;
         tim::vx::Quantization timQuant;
+        std::cout<<"shape info ";
         if(shape.is_static() && shape.has_layout()){
             for( auto d : shape.layout().minor_to_major())
               timShape.push_back(shape.dimensions(d));
         }
+        for(uint32_t i=0;i<timShape.size();i++){
+          std::cout<<timShape[i]<<" ";
+        }
+        std::cout<<std::endl;
         auto type = convertTfPrimitiveTypeToTim(shape.element_type());
         std::unique_lock<std::mutex> lock(mutex_);
         tim::vx::TensorSpec timSpec(type, timShape,
@@ -66,6 +71,11 @@ class BaseVisitor : public DfsHloVisitor {
         tim::vx::Quantization timQuant;
         for( auto d : shape)
           timShape.push_back(d);
+        std::cout<<"shape info ";
+        for(uint32_t i=0;i<timShape.size();i++){
+          std::cout<<timShape[i]<<" ";
+        }
+        std::cout<<std::endl;
 
         std::unique_lock<std::mutex> lock(mutex_);
         tim::vx::TensorSpec timSpec(dataType, timShape,
@@ -76,6 +86,12 @@ class BaseVisitor : public DfsHloVisitor {
   static tim::vx::DataType convertTfPrimitiveTypeToTim(xla::PrimitiveType xlaType){
     std::cout<<"#############"<<xlaType<<std::endl;
       switch(xlaType){
+        case PRED:{
+          return tim::vx::DataType::BOOL8;
+        }
+        case S64:{
+          return tim::vx::DataType::INT32;
+        }
         case S8:{
           return tim::vx::DataType::INT8;
         }
@@ -179,6 +195,15 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleReverse(HloInstruction* hlo) override;
 
+  Status HandleConvert(HloInstruction* hlo) override;
+
+  Status HandleSlice(HloInstruction* hlo) override;
+
+  Status HandleBroadcast(HloInstruction* hlo) override;
+
+  Status HandleConcatenate(HloInstruction* hlo) override;
+  
+
 #define HANDLE_AS_HLO_OP(Name) \
   Status Name(HloInstruction* inst) override { return HandleHloOp(inst); }
 
@@ -192,7 +217,7 @@ class BaseVisitor : public DfsHloVisitor {
     };
 
   UNIMPLEMENTED(HandleTupleSelect)
-  UNIMPLEMENTED(HandleConvert)
+  //UNIMPLEMENTED(HandleConvert)
   UNIMPLEMENTED(HandleCollectivePermuteStart)
   UNIMPLEMENTED(HandleCollectivePermuteDone)
   UNIMPLEMENTED(HandleRngBitGenerator)
@@ -214,7 +239,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleSelect)
   UNIMPLEMENTED(HandleCompare)
   UNIMPLEMENTED(HandleRng)
-  UNIMPLEMENTED(HandleSlice)
+  //UNIMPLEMENTED(HandleSlice)
   UNIMPLEMENTED(HandleDynamicSlice)
   UNIMPLEMENTED(HandleDynamicUpdateSlice)
   UNIMPLEMENTED(HandleSelectAndScatter)
@@ -223,7 +248,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleSort)
   UNIMPLEMENTED(HandleReduce)
   UNIMPLEMENTED(HandleBitcast)
-  UNIMPLEMENTED(HandleBroadcast)
+  //UNIMPLEMENTED(HandleBroadcast)
   UNIMPLEMENTED(HandleReducePrecision)
   UNIMPLEMENTED(HandleOutfeed)
   UNIMPLEMENTED(HandleSend)
@@ -239,7 +264,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleIota)
   UNIMPLEMENTED(HandleScatter)
   UNIMPLEMENTED(HandleCollectivePermute)
-  UNIMPLEMENTED(HandleConcatenate)
+  //UNIMPLEMENTED(HandleConcatenate)
   UNIMPLEMENTED(HandleGetDimensionSize)
   UNIMPLEMENTED(HandleReplicaId)
   UNIMPLEMENTED(HandleTriangularSolve)

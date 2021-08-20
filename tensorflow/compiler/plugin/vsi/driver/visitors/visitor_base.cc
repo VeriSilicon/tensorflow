@@ -40,6 +40,8 @@ limitations under the License.
 #include "tim/vx/ops/reshape.h"
 #include "tim/vx/ops/reverse.h"
 #include "tim/vx/ops/transpose.h"
+#include "tim/vx/ops/stridedslice.h"
+#include "tim/vx/ops/concat.h"
 #include "tim/transform/layout_inference.h"
 using tensorflow::str_util::StartsWith;
 
@@ -116,29 +118,66 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
 }
 
 Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
-    // switch (hlo->opcode())
-    // {
-    //     case HloOpcode::kAdd:{
-    //         LOG(INFO) << "PROCESS add";
-    //         auto shape = hlo->shape();
-    //         const HloInstruction* lhs = hlo->operand(0);
-    //         const HloInstruction* rhs = hlo->operand(1);
-    //         TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-    //         TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+    switch (hlo->opcode())
+    {
+        case HloOpcode::kAdd:{
+            LOG(INFO) << "PROCESS add";
+            auto shape = hlo->shape();
+            const HloInstruction* lhs = hlo->operand(0);
+            const HloInstruction* rhs = hlo->operand(1);
+            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-    //         auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-    //         auto rhs_tensor = GetEvaluatedTensorFor(rhs);
-    //         auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-    //         auto add = graph_->CreateOperation<tim::vx::ops::Add>();
-    //         (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+            auto add = graph_->CreateOperation<tim::vx::ops::Add>();
+            (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-    //         //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-    //         break;
-    //     }
-    //     default:
-    //         LOG(INFO) << "not has benn implement; opcode:" << hlo->opcode();
-    //         break;
-    // }
+            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+            kVsiRunTensorContainer_[hlo] = out_tensor;
+            break;
+        }
+        case HloOpcode::kSubtract:{
+            LOG(INFO) << "PROCESS Subtract";
+            auto shape = hlo->shape();
+            const HloInstruction* lhs = hlo->operand(0);
+            const HloInstruction* rhs = hlo->operand(1);
+            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+            auto sub = graph_->CreateOperation<tim::vx::ops::Sub>();
+            (*sub).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+
+            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+            kVsiRunTensorContainer_[hlo] = out_tensor;
+            break;
+        }
+        case HloOpcode::kMultiply:{
+            LOG(INFO) << "PROCESS Multiply";
+            auto shape = hlo->shape();
+            const HloInstruction* lhs = hlo->operand(0);
+            const HloInstruction* rhs = hlo->operand(1);
+            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+            auto mul = graph_->CreateOperation<tim::vx::ops::Multiply>();
+            (*mul).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+
+            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+            kVsiRunTensorContainer_[hlo] = out_tensor;
+            break;
+        }
+        default:
+            LOG(INFO) << "not has benn implement; opcode:" << hlo->opcode();
+            break;
+    }
     return Status::OK();
 }
 
@@ -151,20 +190,99 @@ Status BaseVisitor::Unimplemented(HloInstruction* inst) {
                             HloOpcodeString(inst->opcode()).c_str());
 }
 
+Status BaseVisitor::HandleSlice(HloInstruction* hlo){
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    const HloInstruction* input = hlo->operand(0);
+    const Shape& output_shape = hlo->shape();
+    const Shape& input_shape = input->shape();
+
+    auto in_tensor = GetEvaluatedTensorFor(input);
+    auto out_tensor = createTensorFromShape(output_shape, tim::vx::TensorAttribute::OUTPUT);
+
+    std::vector<int64> slice_starts = hlo->slice_starts();
+    std::vector<int64> slice_limits = hlo->slice_limits();
+    std::vector<int64> slice_strides = hlo->slice_strides();
+
+    std::vector<int32_t> attr_slice_starts = {0};
+    std::vector<int32_t> attr_slice_limits = {0};
+    std::vector<int32_t> attr_slice_strides = {0};
+
+    //if (slice_starts.size() != 0) {
+    if(0){
+      std::transform(slice_starts.begin(), slice_starts.end(),
+                     attr_slice_starts.begin(),
+                     [](int64& dim) { return static_cast<int32_t>(dim); });
+      std::transform(slice_limits.begin(), slice_limits.end(),
+                     attr_slice_limits.begin(),
+                     [](int64& dim) { return static_cast<int32_t>(dim); });
+      std::transform(slice_strides.begin(), slice_strides.end(),
+                     attr_slice_strides.begin(),
+                     [](int64& dim) { return static_cast<int32_t>(dim); });
+    }
+
+    auto SliceOp = graph_->CreateOperation<tim::vx::ops::StridedSlice>(
+        attr_slice_starts,attr_slice_limits,attr_slice_strides,0,0,0);
+    SliceOp->BindInput(in_tensor).BindOutput(out_tensor);
+
+    kVsiRunTensorContainer_[hlo] = out_tensor;
+
+    return Status::OK();
+}
+Status BaseVisitor::HandleConvert(HloInstruction* hlo){
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    const HloInstruction* input = hlo->operand(0);
+    auto it = kVsiRunTensorContainer_.find(input);
+    kVsiRunTensorContainer_[hlo] = it->second;
+    return Status::OK();
+}
+
 // VSI TODO::it is just hack, need to implement
 Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
-    // const HloInstruction* input = hlo->operand(0);
-    // auto it = evaluatedDevMem_.find(input);
-    // evaluatedDevMem_[hlo] = it->second;
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    const HloInstruction* input = hlo->operand(0);
+    auto it = kVsiRunTensorContainer_.find(input);
+    kVsiRunTensorContainer_[hlo] = it->second;
     return Status::OK();
 }
 
 // VSI TODO::it is just hack, need to implement
 Status BaseVisitor::HandleTuple(HloInstruction* hlo){
-    // const HloInstruction* input = hlo->operand(0);
-    // auto it = evaluatedDevMem_.find(input);
-    // evaluatedDevMem_[hlo] = it->second;
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    const HloInstruction* input = hlo->operand(0);
+    auto it = kVsiRunTensorContainer_.find(input);
+    kVsiRunTensorContainer_[hlo] = it->second;
     return Status::OK();
+}
+
+Status BaseVisitor::HandleBroadcast(HloInstruction* hlo){
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    const HloInstruction* input = hlo->operand(0);
+    auto it = kVsiRunTensorContainer_.find(input);
+    kVsiRunTensorContainer_[hlo] = it->second;
+    return Status::OK();
+}
+
+Status BaseVisitor::HandleConcatenate(HloInstruction* hlo) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto shape = hlo->shape();
+  const HloInstruction* lhs = hlo->operand(0);
+  const HloInstruction* rhs = hlo->operand(1);
+  //   TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+  //   TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+
+  auto dims = hlo->dimensions();
+  for(auto dim :dims){
+      std::cout<<" @@@"<<dim;
+  }
+  std::cout<<std::endl;
+  auto lhs_tensor = GetEvaluatedTensorFor(lhs);
+  auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+  auto out_tensor =
+      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+  auto add = graph_->CreateOperation<tim::vx::ops::Concat>(dims[0],2);
+  (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+
+  kVsiRunTensorContainer_[hlo] = out_tensor;
 }
 
 Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
@@ -250,20 +368,21 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
 }
 
 Status BaseVisitor::HandleReshape(HloInstruction* hlo){
-    // LOG(INFO) << "PROCESS " << __FUNCTION__;
-    // auto shape = hlo->shape();
-    // const HloInstruction* input = hlo->operand(0);
-    // auto in_tensor = GetEvaluatedTensorFor(input);
-    // auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    auto shape = hlo->shape();
+    const HloInstruction* input = hlo->operand(0);
+    auto in_tensor = GetEvaluatedTensorFor(input);
+    auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
-    // std::vector<uint32_t> dims;
-    // for(auto d: shape.dimensions()){
-    //     dims.push_back(d);
-    // }
-    // auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
-    // (*reshapeOp).BindInput(in_tensor).BindOutput(out_tensor);
+    std::vector<uint32_t> dims;
+    for(auto d: shape.dimensions()){
+        dims.push_back(d);
+    }
+    auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
+    (*reshapeOp).BindInput(in_tensor).BindOutput(out_tensor);
 
-    // evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+    //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+    kVsiRunTensorContainer_[hlo] = out_tensor;
     return Status::OK();
 }
 
