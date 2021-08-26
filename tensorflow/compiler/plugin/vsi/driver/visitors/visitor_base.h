@@ -53,6 +53,10 @@ class BaseVisitor : public DfsHloVisitor {
             for( auto d : shape.layout().minor_to_major())
               timShape.push_back(shape.dimensions(d));
         }
+
+        if(timShape.size() == 0){
+          timShape.push_back(1);
+        }
         for(uint32_t i=0;i<timShape.size();i++){
           std::cout<<timShape[i]<<" ";
         }
@@ -72,6 +76,9 @@ class BaseVisitor : public DfsHloVisitor {
         for( auto d : shape)
           timShape.push_back(d);
         std::cout<<"shape info ";
+        if(timShape.size() == 0){
+          timShape.push_back(1);
+        }
         for(uint32_t i=0;i<timShape.size();i++){
           std::cout<<timShape[i]<<" ";
         }
@@ -179,6 +186,8 @@ class BaseVisitor : public DfsHloVisitor {
   }
   Status HandleElementwiseBinary(HloInstruction* hlo) override;
 
+  Status HandleElementwiseUnary(HloInstruction* hlo) override;
+
   Status HandleConstant(HloInstruction* hlo) override;
 
   Status HandleParameter(HloInstruction* hlo) override;
@@ -197,12 +206,17 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleConvert(HloInstruction* hlo) override;
 
-  Status HandleSlice(HloInstruction* hlo) override;
+  //Status HandleSlice(HloInstruction* hlo) override;
 
   Status HandleBroadcast(HloInstruction* hlo) override;
 
   Status HandleConcatenate(HloInstruction* hlo) override;
   
+  Status HandleCompare(HloInstruction* hlo) override;
+
+  Status HandleSelect(HloInstruction* hlo) override;
+
+  Status HandleReduce(HloInstruction* hlo) override;
 
 #define HANDLE_AS_HLO_OP(Name) \
   Status Name(HloInstruction* inst) override { return HandleHloOp(inst); }
@@ -234,19 +248,19 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleReal)
   UNIMPLEMENTED(HandleAllToAll)
   UNIMPLEMENTED(HandleAddDependency)
-  UNIMPLEMENTED(HandleElementwiseUnary)
+  //UNIMPLEMENTED(HandleElementwiseUnary)
   UNIMPLEMENTED(HandleClamp)
-  UNIMPLEMENTED(HandleSelect)
-  UNIMPLEMENTED(HandleCompare)
+  //UNIMPLEMENTED(HandleSelect)
+  //UNIMPLEMENTED(HandleCompare)
   UNIMPLEMENTED(HandleRng)
-  //UNIMPLEMENTED(HandleSlice)
+  UNIMPLEMENTED(HandleSlice)
   UNIMPLEMENTED(HandleDynamicSlice)
   UNIMPLEMENTED(HandleDynamicUpdateSlice)
   UNIMPLEMENTED(HandleSelectAndScatter)
   UNIMPLEMENTED(HandleWhile)
   UNIMPLEMENTED(HandlePad)
   UNIMPLEMENTED(HandleSort)
-  UNIMPLEMENTED(HandleReduce)
+  //UNIMPLEMENTED(HandleReduce)
   UNIMPLEMENTED(HandleBitcast)
   //UNIMPLEMENTED(HandleBroadcast)
   UNIMPLEMENTED(HandleReducePrecision)

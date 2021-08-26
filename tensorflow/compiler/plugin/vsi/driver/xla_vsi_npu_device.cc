@@ -65,7 +65,6 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "Real") return false;
   if (kdef->op() == "Cast") return false;
   if (kdef->op() == "RandomUniform") return false;
-  if (kdef->op() == "StridedSlice") return false;
 
   if (kdef->op() == "Assert") {
     AddDtypeToKernelDefConstraint("T", DT_STRING, kdef);
