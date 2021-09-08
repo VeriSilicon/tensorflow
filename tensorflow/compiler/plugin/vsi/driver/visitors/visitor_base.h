@@ -44,6 +44,34 @@ class BaseVisitor : public DfsHloVisitor {
     BaseVisitor(VsiExecutor* executor) : executor_(executor),
     graph_(executor->getContext()->CreateGraph()) {};
 
+    std::shared_ptr<tim::vx::Tensor> createTensorFromTupleShape(const Shape &shape,
+        int64 index,tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
+        tim::vx::ShapeType timShape;
+        tim::vx::Quantization timQuant;
+        std::cout<<"shape info ";
+
+
+        auto output_shape = shape.tuple_shapes(index);
+
+        if(output_shape.is_static() && output_shape.has_layout()){
+            for( auto d : output_shape.layout().minor_to_major())
+              timShape.push_back(output_shape.dimensions(d));
+        }
+
+        if(timShape.size() == 0){
+          timShape.push_back(1);
+        }
+        for(uint32_t i=0;i<timShape.size();i++){
+          std::cout<<timShape[i]<<" ";
+        }
+        std::cout<<std::endl;
+        auto type = convertTfPrimitiveTypeToTim(output_shape.element_type());
+        std::unique_lock<std::mutex> lock(mutex_);
+        tim::vx::TensorSpec timSpec(type, timShape,
+                    attr, timQuant);
+        return graph_->CreateTensor(timSpec);
+    }
+  
     std::shared_ptr<tim::vx::Tensor> createTensorFromShape(const Shape &shape,
         tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
         tim::vx::ShapeType timShape;
@@ -177,7 +205,7 @@ class BaseVisitor : public DfsHloVisitor {
         auto it = kVsiRunTensorContainer_.find(hlo);
         CHECK(it != kVsiRunTensorContainer_.end())
             << "could not find evaluated value for: " << hlo->ToString();
-        return kVsiRunTensorContainer_[hlo];
+        return kVsiRunTensorContainer_[hlo][0];
     }
 
   // Called by HandleElementwiseBinarythe FinishVisit.
@@ -217,6 +245,10 @@ class BaseVisitor : public DfsHloVisitor {
   Status HandleSelect(HloInstruction* hlo) override;
 
   Status HandleReduce(HloInstruction* hlo) override;
+
+  Status HandleDot(HloInstruction* hlo) override;
+
+  Status HandleIota(HloInstruction* hlo) override;
 
 #define HANDLE_AS_HLO_OP(Name) \
   Status Name(HloInstruction* inst) override { return HandleHloOp(inst); }
@@ -275,7 +307,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleFft)
   UNIMPLEMENTED(HandleGather)
   UNIMPLEMENTED(HandleCopy)
-  UNIMPLEMENTED(HandleIota)
+  //UNIMPLEMENTED(HandleIota)
   UNIMPLEMENTED(HandleScatter)
   UNIMPLEMENTED(HandleCollectivePermute)
   //UNIMPLEMENTED(HandleConcatenate)
@@ -288,7 +320,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleCopyStart)
   UNIMPLEMENTED(HandleCopyDone)
   UNIMPLEMENTED(HandleSetDimensionSize)
-  UNIMPLEMENTED(HandleDot)
+  //UNIMPLEMENTED(HandleDot)
   UNIMPLEMENTED(HandleReduceWindow)
 
  protected:
@@ -307,8 +339,10 @@ private:
     //       handle.
     std::mutex mutex_;
     std::unordered_map<const HloInstruction *, Literal> evaluated_ TF_GUARDED_BY(mutex_);
-    std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
+    std::unordered_map<const HloInstruction*, std::vector<std::shared_ptr<tim::vx::Tensor>>>
         kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
+    // std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
+    //     kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
     std::vector<Literal> arg_literals_;
     std::shared_ptr<tim::vx::Graph> graph_;
 };

@@ -97,7 +97,7 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
         auto tensor = visitor_->evaluate(*computation, arg_literals);
 
         auto root_instr = computation->root_instruction();
-        auto output_size = ShapeUtil::ByteSizeOf(root_instr->shape());
+        auto output_size = ShapeUtil::ByteSizeOf(root_instr->shape(),sizeof(void*));
         LOG(INFO) << "Output Size:" << output_size;
 
         se::DeviceMemoryBase devMem = executor_->Allocate(output_size, 0);
