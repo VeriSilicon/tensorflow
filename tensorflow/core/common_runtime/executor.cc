@@ -573,7 +573,7 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
     Status s = ProcessOutputs(*state->item, &state->ctx, outputs.data(), stats);
     nodestats::SetMemory(stats, &state->ctx);
     if (vlog_) {
-      VLOG(2) << "Async kernel done: " << state->item->node_id << " step "
+      VLOG(1) << "Async kernel done: " << state->item->node_id << " step "
               << step_id_ << " " << SummarizeNodeDef(state->item->kernel->def())
               << (state->tagged_node.get_is_dead() ? " is dead" : "")
               << " device: " << device->name();
@@ -769,17 +769,20 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       params.forward_from_array = item.forward_from();
       params.outputs_required_array = item.outputs_required.get();
 
-      if (item.kernel_is_async) {
-        ProcessAsync(item, params, tagged_node, first_input, stats);
-        launched_asynchronously = true;
-      } else {
+      // if (item.kernel_is_async) {
+      //   LOG(INFO) << "ProcessAsync : " << SummarizeNodeDef(item.kernel->def());
+      //   ProcessAsync(item, params, tagged_node, first_input, stats);
+      //   launched_asynchronously = true;
+      // } else 
+      {
+        LOG(INFO) << "ProcessSync : " << SummarizeNodeDef(item.kernel->def());
         s = ProcessSync(item, &params, &outputs, stats);
       }
     }
 
     if (!launched_asynchronously) {
       if (vlog_) {
-        VLOG(2) << "Synchronous kernel done: " << id << " step "
+        VLOG(1) << "Synchronous kernel done: " << id << " step "
                 << params.step_id << " " << SummarizeNodeDef(item.kernel->def())
                 << (tagged_node.get_is_dead() ? " is dead: " : "")
                 << " device: " << device->name();

@@ -75,11 +75,11 @@ static Node* AddIdentity(StringPiece name, Graph* g, Endpoint input) {
 
 void DumpGraph(StringPiece label, const Graph* g) {
   // TODO(zhifengc): Change Graph to record #nodes.
-  VLOG(2) << "Graph " << label << " #nodes " << g->num_nodes() << " #edges "
+  VLOG(1) << "Graph " << label << " #nodes " << g->num_nodes() << " #edges "
           << g->num_edges();
-  if (VLOG_IS_ON(5)) {
+  if (VLOG_IS_ON(1)) {
     for (const auto& line : str_util::Split(DebugString(g), '\n')) {
-      VLOG(5) << "|| " << line;
+      VLOG(1) << "|| " << line;
     }
   }
 }
