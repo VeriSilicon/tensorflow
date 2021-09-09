@@ -171,7 +171,7 @@ class BaseVisitor : public DfsHloVisitor {
     Literal evaluate(const HloComputation& computation
          /*absl::Span<const Literal* const> arg_literals*/);
     
-    std::shared_ptr<tim::vx::Tensor> evaluate(const HloComputation& computation,
+    std::vector<std::shared_ptr<tim::vx::Tensor>> evaluate(const HloComputation& computation,
         std::vector<Literal>& argument_literals);
 
     Status HandleHloOp(HloInstruction* hlo);
@@ -200,12 +200,12 @@ class BaseVisitor : public DfsHloVisitor {
         return it->second;
     }
 
-    const std::shared_ptr<tim::vx::Tensor> GetEvaluatedTensorFor(const HloInstruction* hlo) {
+    const std::vector<std::shared_ptr<tim::vx::Tensor>> GetEvaluatedTensorFor(const HloInstruction* hlo) {
         //return createTensorFromShape(hlo->shape());
         auto it = kVsiRunTensorContainer_.find(hlo);
         CHECK(it != kVsiRunTensorContainer_.end())
             << "could not find evaluated value for: " << hlo->ToString();
-        return kVsiRunTensorContainer_[hlo][0];
+        return kVsiRunTensorContainer_[hlo];
     }
 
   // Called by HandleElementwiseBinarythe FinishVisit.

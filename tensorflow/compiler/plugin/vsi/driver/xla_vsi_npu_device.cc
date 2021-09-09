@@ -37,8 +37,57 @@ std::vector<DataType> GetVsiNpuSupportedTypes() {
 
   // Lambda which will get all the supported types given the flags.
   auto get_types = [] {
-    std::vector<DataType> supported = {DT_INT32, DT_INT64, DT_DOUBLE, DT_FLOAT, DT_HALF,
-                                       DT_BOOL};
+    // std::vector<DataType> supported = {DT_INT32, DT_INT64, DT_DOUBLE, DT_FLOAT, DT_HALF,
+    //                                    DT_BOOL};
+    std::vector<DataType> supported = {
+        DT_INVALID ,
+  DT_FLOAT,
+  DT_DOUBLE,
+  DT_INT32,
+  DT_UINT8,
+  DT_INT16,
+  DT_INT8,
+  DT_STRING,
+  DT_COMPLEX64,
+  DT_INT64,
+  DT_BOOL,
+  DT_QINT8,
+  DT_QUINT8,
+  DT_QINT32,
+  DT_BFLOAT16,
+  DT_QINT16,
+  DT_QUINT16,
+  DT_UINT16,
+  DT_COMPLEX128,
+  DT_HALF,
+  DT_RESOURCE,
+  DT_VARIANT,
+  DT_UINT32,
+  DT_UINT64,
+  DT_FLOAT_REF,
+  DT_DOUBLE_REF,
+  DT_INT32_REF,
+  DT_UINT8_REF,
+  DT_INT16_REF,
+  DT_INT8_REF,
+  DT_STRING_REF,
+  DT_COMPLEX64_REF,
+  DT_INT64_REF,
+  DT_BOOL_REF,
+  DT_QINT8_REF,
+  DT_QUINT8_REF,
+  DT_QINT32_REF,
+  DT_BFLOAT16_REF,
+  DT_QINT16_REF,
+  DT_QUINT16_REF,
+  DT_UINT16_REF,
+  DT_COMPLEX128_REF,
+  DT_HALF_REF,
+  DT_RESOURCE_REF,
+  DT_VARIANT_REF,
+  DT_UINT32_REF,
+  DT_UINT64_REF,
+    };
     return supported;
   };
 
@@ -47,6 +96,7 @@ std::vector<DataType> GetVsiNpuSupportedTypes() {
 };
 
 static bool OpFilter(KernelDef* kdef) {
+  std::cout<<"!!!!!!!!!!!1"<<kdef->op()<<std::endl;
   if (kdef->op() == "Angle") return false;
   if (kdef->op() == "Complex") return false;
   if (kdef->op() == "ComplexAbs") return false;
@@ -58,8 +108,36 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "IFFT2D") return false;
   if (kdef->op() == "IFFT3D") return false;
   if (kdef->op() == "Imag") return false;
+
+  if (kdef->op() == "MaxPool") return false;
+  if (kdef->op() == "MaxPoolV2") return false;
+  if (kdef->op() == "MaxPool3D") return false;
+  if (kdef->op() == "MaxPoolGrad") return false;
+  if (kdef->op() == "MaxPoolGradV2") return false;
+  if (kdef->op() == "MaxPool3DGrad") return false;
   if (kdef->op() == "MaxPoolGradGrad") return false;
+  if (kdef->op() == "MaxPoolGradGradV2") return false;
   if (kdef->op() == "MaxPool3DGradGrad") return false;
+
+  if (kdef->op() == "AvgPool") return false;
+  if (kdef->op() == "AvgPool3D") return false;
+  if (kdef->op() == "AvgPoolGrad") return false;
+  if (kdef->op() == "AvgPool3DGrad") return false;
+
+  if (kdef->op() == "Diag") return false;
+  if (kdef->op() == "DiagPart") return false;
+  //if (kdef->op() == "ReverseSequence") return false;
+  if (kdef->op() == "Range") return false;
+  if (kdef->op() == "LinSpace") return false;
+  if (kdef->op() == "DepthToSpace") return false;
+  if (kdef->op() == "SpaceToBatchND") return false;
+  if (kdef->op() == "SpaceToBatch") return false;
+  if (kdef->op() == "LRN") return false;
+  if (kdef->op() == "LRNGrad") return false;
+  if (kdef->op() == "XlaReduceWindow") return false;
+
+  if (kdef->op() == "Conv2DBackpropFilter") return false;
+
   if (kdef->op() == "NonMaxSuppressionV4") return false;
   if (kdef->op() == "Qr") return false;
   if (kdef->op() == "Real") return false;

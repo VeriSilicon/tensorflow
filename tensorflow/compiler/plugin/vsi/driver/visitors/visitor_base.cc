@@ -59,19 +59,20 @@ Literal BaseVisitor::evaluate(const HloComputation& computation
     return GetEvaluatedLiteralFor(computation.root_instruction()).Clone();
 }
 
-std::shared_ptr<tim::vx::Tensor> BaseVisitor::evaluate(
+std::vector<std::shared_ptr<tim::vx::Tensor>> BaseVisitor::evaluate(
     const HloComputation& computation,
     std::vector<Literal>& argument_literals){
     arg_literals_ = std::move(argument_literals);
     computation.Accept(this);
     graph_->PrintGraph();
+    std::vector<std::shared_ptr<tim::vx::Tensor>> fault_result;
     if (!graph_->Compile()) {
         LOG(FATAL) << "Compile graph fail.";
-        return nullptr;
+        return fault_result;
     }
     if(!graph_->Run()){
         LOG(FATAL) << "Run graph fail";
-        return nullptr;
+        return fault_result;
     }
     return GetEvaluatedTensorFor(computation.root_instruction());
 }
@@ -88,7 +89,7 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
     std::vector<int64_t> output_dims(dim_size, 1);
     std::vector<uint32_t> perm(dim_size, 1);
 
-    auto input_tensor = GetEvaluatedTensorFor(hlo);
+    auto input_tensor = GetEvaluatedTensorFor(hlo)[0];
 
     /*check if the shape is {WHCN} , if not, a transpose would be inserted to covert the layout. */
     bool is_need_insert_transpose = false;
@@ -129,7 +130,7 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             auto shape = hlo->shape();
             const HloInstruction* input = hlo->operand(0);
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input);
+            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
             auto neg = graph_->CreateOperation<tim::vx::ops::Neg>();
@@ -143,7 +144,7 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             auto shape = hlo->shape();
             const HloInstruction* input = hlo->operand(0);
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input);
+            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
             auto exp = graph_->CreateOperation<tim::vx::ops::Exp>();
@@ -157,7 +158,7 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             auto shape = hlo->shape();
             const HloInstruction* input = hlo->operand(0);
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input);
+            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
             auto log1p = graph_->CreateOperation<tim::vx::ops::Log>();
@@ -171,7 +172,7 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             auto shape = hlo->shape();
             const HloInstruction* input = hlo->operand(0);
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input);
+            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
             auto log1p = graph_->CreateOperation<tim::vx::ops::Log>();
@@ -185,11 +186,25 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             auto shape = hlo->shape();
             const HloInstruction* input = hlo->operand(0);
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input);
+            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
             auto logical_not = graph_->CreateOperation<tim::vx::ops::LogicalNot>();
             (*logical_not).BindInput(inout_tensor).BindOutput(out_tensor);
+
+            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            break;
+        }
+        case HloOpcode::kSqrt:{
+            LOG(INFO) << "PROCESS kSqrt";
+            auto shape = hlo->shape();
+            const HloInstruction* input = hlo->operand(0);
+            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
+            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
+            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+
+            auto Sqrt = graph_->CreateOperation<tim::vx::ops::Sqrt>();
+            (*Sqrt).BindInput(inout_tensor).BindOutput(out_tensor);
 
             kVsiRunTensorContainer_[hlo].push_back(out_tensor);
             break;
@@ -211,8 +226,8 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
             TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
             auto add = graph_->CreateOperation<tim::vx::ops::Add>();
             (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
@@ -229,8 +244,8 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
             TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
             auto sub = graph_->CreateOperation<tim::vx::ops::Sub>();
             (*sub).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
@@ -263,8 +278,8 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
 
             if (left_timShape.size() == 2 && right_timShape.size() == 2 &&
                 left_timShape[1] != right_timShape[1]) {
-              auto lhs_tensor = GetEvaluatedTensorFor(rhs);
-              auto rhs_tensor = GetEvaluatedTensorFor(lhs);
+              auto lhs_tensor = GetEvaluatedTensorFor(rhs)[0];
+              auto rhs_tensor = GetEvaluatedTensorFor(lhs)[0];
               auto out_tensor = createTensorFromShape(
                   shape, tim::vx::TensorAttribute::OUTPUT);
               auto mul = graph_->CreateOperation<tim::vx::ops::Multiply>();
@@ -278,8 +293,8 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
               break;
             }
 
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
             auto mul = graph_->CreateOperation<tim::vx::ops::Multiply>();
             (*mul).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
@@ -295,8 +310,8 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             const HloInstruction* rhs = hlo->operand(1);
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
 
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
             auto div = graph_->CreateOperation<tim::vx::ops::Div>();
             if(rhs_tensor->IsConstTensor() || rhs_tensor->GetDataType() == tim::vx::DataType::INT32){
@@ -334,8 +349,8 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
             TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
             auto maximum = graph_->CreateOperation<tim::vx::ops::Maximum>();
             (*maximum).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
@@ -373,10 +388,18 @@ Status BaseVisitor::HandleTuple(HloInstruction* hlo){
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     std::cout<<hlo->operand_count()<<std::endl;
 
+    auto shape = hlo->shape();
+    
+
     int64 input_num = hlo->operand_count();
     for(int64 i=0;i<input_num;i++ ){
         const HloInstruction* input = hlo->operand(i);
         auto it = kVsiRunTensorContainer_.find(input);
+        auto shape = it->second[0]->GetSpec().shape_;
+        for(auto size:shape){
+            std::cout<<size<<" ";
+        }
+        std::cout<<std::endl;
         kVsiRunTensorContainer_[hlo].push_back(it->second[0]);
     }
     
@@ -391,12 +414,19 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
 
     auto* tuple_hlo = Cast<HloGetTupleElementInstruction>(hlo);
     int64 index = tuple_hlo->tuple_index();
-    std::cout<<"tuple_index"<<index<<std::endl;
+    LOG(INFO) << "tuple index is"<<index;
 
+    LOG(INFO) << "PROCESS 1" << __FUNCTION__;
     const HloInstruction* input = hlo->operand(0);
+    LOG(INFO) << "PROCESS 2" << __FUNCTION__;
     auto it = kVsiRunTensorContainer_.find(input);
+    if(it == kVsiRunTensorContainer_.end()){
+        LOG(INFO) << "PROCESS FUCK ,can not find "<< __FUNCTION__;
+    }
+    LOG(INFO) << "PROCESS 3"<< __FUNCTION__;
+    
     kVsiRunTensorContainer_[hlo].push_back(it->second[index]);
-
+    LOG(INFO) << "PROCESS 4" << __FUNCTION__;
 
     // auto shape = hlo->shape();
 
@@ -415,7 +445,7 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
     int64 input_num = reduce_hlo->input_count();
     if (input_num == 1) {
       const HloInstruction* input = reduce_hlo->operand(0);
-      auto input_tensor = GetEvaluatedTensorFor(input);
+      auto input_tensor = GetEvaluatedTensorFor(input)[0];
 
       uint32_t input_tensor_dimensions = input_tensor->GetShape().size();
 
@@ -437,7 +467,7 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
     } else {
       for (int64 i = 0; i < input_num; i++) {
         const HloInstruction* input = reduce_hlo->operand(i);
-        auto input_tensor = GetEvaluatedTensorFor(input);
+        auto input_tensor = GetEvaluatedTensorFor(input)[0];
 
         uint32_t input_tensor_dimensions = input_tensor->GetShape().size();
 
@@ -475,8 +505,8 @@ Status BaseVisitor::HandleCompare(HloInstruction* hlo) {
     TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
     TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-    auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-    auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+    auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+    auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
     auto out_tensor =
       createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
     auto compare = graph_->CreateOperation<tim::vx::ops::Equal>();
@@ -495,9 +525,9 @@ Status BaseVisitor::HandleSelect(HloInstruction* hlo) {
     TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
     TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
-    auto condition_tensor = GetEvaluatedTensorFor(condition);
-    auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-    auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+    auto condition_tensor = GetEvaluatedTensorFor(condition)[0];
+    auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+    auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
     auto out_tensor =
       createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
     auto select = graph_->CreateOperation<tim::vx::ops::Select>();
@@ -527,8 +557,8 @@ Status BaseVisitor::HandleConcatenate(HloInstruction* hlo) {
   auto dims = hlo->dimensions();
 
   //std::cout<<std::endl;
-  auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-  auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+  auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+  auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
   auto out_tensor =
       createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
   auto concat = graph_->CreateOperation<tim::vx::ops::Concat>(dims[0],2);
@@ -550,7 +580,7 @@ Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
     CHECK_EQ(transpose->dimensions().size(), in_shape.rank());
     CHECK_EQ(in_shape.rank(), out_shape.rank());
 
-    auto in_tensor = GetEvaluatedTensorFor(input);
+    auto in_tensor = GetEvaluatedTensorFor(input)[0];
     auto out_tensor = createTensorFromShape(out_shape, tim::vx::TensorAttribute::OUTPUT);
 
     std::vector<uint32_t> tmpdims;
@@ -590,7 +620,7 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
     // CHECK_EQ(hlo->dimensions().size(), in_shape.rank());
     CHECK_EQ(in_shape.rank(), out_shape.rank());
 
-    auto in_tensor = GetEvaluatedTensorFor(input);
+    auto in_tensor = GetEvaluatedTensorFor(input)[0];
     auto out_tensor = createTensorFromShape(out_shape, tim::vx::TensorAttribute::OUTPUT);
 
     std::vector<uint32_t> tmpdims;
@@ -624,7 +654,7 @@ Status BaseVisitor::HandleReshape(HloInstruction* hlo){
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     auto shape = hlo->shape();
     const HloInstruction* input = hlo->operand(0);
-    auto in_tensor = GetEvaluatedTensorFor(input);
+    auto in_tensor = GetEvaluatedTensorFor(input)[0];
     auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
     std::vector<uint32_t> dims;
@@ -684,8 +714,8 @@ Status BaseVisitor::HandleDot(HloInstruction* hlo){
     const HloInstruction* lhs = hlo->operand(1);
     const HloInstruction* rhs = hlo->operand(0);
 
-    auto lhs_tensor = GetEvaluatedTensorFor(lhs);
-    auto rhs_tensor = GetEvaluatedTensorFor(rhs);
+    auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+    auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
     auto out_tensor =
           createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 

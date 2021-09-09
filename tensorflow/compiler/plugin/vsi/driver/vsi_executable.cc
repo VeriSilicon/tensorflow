@@ -51,10 +51,62 @@ VsiExecutable::~VsiExecutable()
 {
 }
 
+// StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
+//     const ServiceExecutableRunOptions* run_options,
+//     std::vector<ExecutionInput> arguments,
+//     HloExecutionProfile* hlo_execution_profile) {
+//     if (hlo_module_) {
+//         const HloComputation* entry_comp = hlo_module_->entry_computation();
+//         CHECK_EQ(entry_comp->num_parameters(), arguments.size())
+//             << "Wrong number of arguments passed when running executable";
+//         for (int64 i = 0; i < entry_comp->num_parameters(); ++i) {
+//         const Shape& expected_shape =
+//             entry_comp->parameter_instruction(i)->shape();
+//         const Shape& actual_shape = arguments[i].Buffers().shape();
+//         TF_RET_CHECK(
+//             ShapeUtil::DynamicShapeIsCompatible(actual_shape, expected_shape))
+//             << "Shape mismatch on argument " << i << ", "
+//             << expected_shape.ToString(/*print_layout=*/true) << " vs. "
+//             << actual_shape.ToString(/*print_layout=*/true);
+//         }
+//     }
+
+//     std::vector<se::DeviceMemoryBase> argument_buffers;
+//     std::vector<Shape> argument_shapes;
+//     for(size_t i=0;i<arguments.size();i++){
+//         const se::DeviceMemoryBase& argument_buffer =
+//                 arguments[i].Buffer(/*index=*/{}).AsDeviceMemoryBase();
+//         const Shape& argument_shape = arguments[i].shape();
+//         argument_buffers.push_back(argument_buffer);
+//         argument_shapes.push_back(argument_shape);
+//     }
+
+//     VLOG(1) << "Execute " << module().name();
+//     if (VLOG_IS_ON(1)) {
+//         for (const auto& a : argument_buffers) {
+//         VLOG(1) << "-- argument " << a.opaque();
+//         }
+//     }
+
+//     se::DeviceMemoryAllocator* memory_allocator = run_options->allocator();
+
+//         // auto* host_stream = dynamic_cast<se::host::HostStream*>(
+//         //     run_options->stream()->implementation());
+//         // se::Stream* stream = run_options->stream();
+//         // se::DeviceMemoryAllocator* memory_allocator = run_options->allocator();
+
+
+//     // se::DeviceMemoryBase out = arguments[allocation.parameter_number()]
+//     //                                .Buffer(allocation.param_shape_index())
+//     //                                .AsDeviceMemoryBase();
+
+// }
+
 StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ExecutionInput> arguments,
     HloExecutionProfile* hlo_execution_profile){
+        mtx_.try_lock();
         LOG(INFO) << "Execute " << module().name();
         se::Stream* stream = run_options->stream();
         se::StreamExecutor* executor = stream->parent();
@@ -96,25 +148,75 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
  
         auto tensor = visitor_->evaluate(*computation, arg_literals);
 
+        // Transform the result literal back into a ShapedBuffer.
         auto root_instr = computation->root_instruction();
-        auto output_size = ShapeUtil::ByteSizeOf(root_instr->shape(),sizeof(void*));
-        LOG(INFO) << "Output Size:" << output_size;
+        const Shape& result_shape = root_instr->shape();
 
-        se::DeviceMemoryBase devMem = executor_->Allocate(output_size, 0);
-        tensor->CopyDataFromTensor(devMem.opaque());
+        TF_ASSIGN_OR_RETURN(ScopedShapedBuffer result_buffers,
+                            transfer_manager->AllocateScopedShapedBuffer(
+                                result_shape, run_options->allocator(),
+                                executor->device_ordinal()));
 
-        /*for vsi, memory layout always is dim 0 as major */
-        auto shape = root_instr->shape();
-        *shape.mutable_layout() = LayoutUtil::GetDefaultLayoutForRank(root_instr->shape().rank());
 
-        ScopedShapedBuffer shaped_buffer(shape, shape,
-            run_options->allocator(), executor->device_ordinal());
+        if(!result_shape.IsTuple()){
+            for(auto& pair:result_buffers.buffers()){
+                const ShapeIndex& index = pair.first;
+                se::DeviceMemoryBase& memory_base = pair.second;
+                const Shape& subshape =
+                    ShapeUtil::GetSubshape(result_buffers.on_device_shape(), index);
+                std::cout<<"no-tuple  result buffer info "<<subshape.ToString()<<std::endl;
+                tensor[0]->CopyDataFromTensor(memory_base.opaque());
+            }
+        }else{
+            int32_t count = 0;
+            auto top_shape_memory = result_buffers.buffers();
 
-        const ShapeIndex shapeIndex;
-        for(auto& pair : shaped_buffer.buffers()){
-            pair.second = devMem;
+            se::DeviceMemoryBase top_memory_base;
+            for(auto& pair:result_buffers.buffers()){
+                if(count == 0){
+                    top_memory_base = pair.second;
+                    std::cout<<"top_memory_base location is "<<top_memory_base.opaque()<<std::endl;
+                    count++;
+                }
+            }
+
+            count = -1;
+            for(auto& pair:result_buffers.buffers()){
+                count++;
+                if(count == 0) continue;
+                const ShapeIndex& index = pair.first;
+                se::DeviceMemoryBase& memory_base = pair.second;
+                const Shape& subshape =
+                    ShapeUtil::GetSubshape(result_buffers.on_device_shape(), index);
+                std::cout<<"tuple result buffer info "<<subshape.ToString()<<std::endl;
+
+                tensor[count - 1]->CopyDataFromTensor(memory_base.opaque());
+                *(size_t*)(top_memory_base.opaque() + sizeof(void*)*(count - 1)) = (size_t)memory_base.opaque();
+                std::cout<<"sub tensor mem is "<<memory_base.opaque()<<std::endl;
+                
+            }
         }
-        ExecutionOutput result(std::move(shaped_buffer));
+        // auto output_size =
+        //     ShapeUtil::ByteSizeOf(root_instr->shape(), sizeof(void*));
+        // LOG(INFO) << "Output Size:" << output_size;
+
+        // se::DeviceMemoryBase devMem = executor_->Allocate(output_size, 0);
+        // tensor[0]->CopyDataFromTensor(devMem.opaque());
+
+        // /*for vsi, memory layout always is dim 0 as major */
+        // auto shape = root_instr->shape();
+        // *shape.mutable_layout() =
+        //     LayoutUtil::GetDefaultLayoutForRank(root_instr->shape().rank());
+
+        //     ScopedShapedBuffer shaped_buffer(shape, shape,
+        //         run_options->allocator(), executor->device_ordinal());
+
+        // const ShapeIndex shapeIndex;
+        // for (auto& pair : shaped_buffer.buffers()) {
+        //     pair.second = devMem;
+        // }
+        ExecutionOutput result(std::move(result_buffers));
+        mtx_.unlock();
         return result;
     }
 

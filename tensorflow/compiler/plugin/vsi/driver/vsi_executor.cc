@@ -43,8 +43,9 @@ se::DeviceMemoryBase VsiExecutor::Allocate(uint64 size, int64 memory_space){
     // tim::vx::Quantization input_quant(tim::vx::QuantType::ASYMMETRIC, 1.0f, 0);
     // tim::vx::TensorSpec input_spec(tim::vx::DataType::UINT8, input_shape,
     //                                 tim::vx::TensorAttribute::VARIABLE, input_quant);
-    // std::unique_lock<std::mutex> lock(mutex_);
+    // 
     // kVsiTensorContainer.push_back( kVsiGraphContainer[ordinal_]->CreateTensor(input_spec) );
+    std::unique_lock<std::mutex> lock(mutex_);
     void* data = malloc(size);
     return se::DeviceMemoryBase(data, size);
     //return se::DeviceMemoryBase( kVsiTensorContainer.back().get(), size);
@@ -56,9 +57,9 @@ void *VsiExecutor::GetSubBuffer(se::DeviceMemoryBase *parent, uint64 offset, uin
 }
 
 void VsiExecutor::Deallocate(se::DeviceMemoryBase *mem) {
+    std::unique_lock<std::mutex> lock(mutex_);
     free(mem->opaque());
     // auto t = static_cast<tim::vx::Tensor*>(mem->opaque());
-    // std::unique_lock<std::mutex> lock(mutex_);
     // for(auto it = kVsiTensorContainer.begin(); it != kVsiTensorContainer.end(); it++){
     //     if(it->get() == t){
     //         it = kVsiTensorContainer.erase(it);
