@@ -1323,13 +1323,14 @@ Status FindKernelRegistration(
     if (match) {
       if (*reg != nullptr) {
         if ((*reg)->def.priority() == iter->second.def.priority()) {
-          return errors::InvalidArgument(
-              "Multiple OpKernel registrations match NodeDef at the same "
-              "priority '",
-              FormatNodeDefForError(node_name, has_experimental_debug_info,
-                                    experimental_debug_info),
-              "': '", (*reg)->def.ShortDebugString(), "' and '",
-              iter->second.def.ShortDebugString(), "'");
+          // return errors::InvalidArgument(
+          //     "Multiple OpKernel registrations match NodeDef at the same "
+          //     "priority '",
+          //     FormatNodeDefForError(node_name, has_experimental_debug_info,
+          //                           experimental_debug_info),
+          //     "': '", (*reg)->def.ShortDebugString(), "' and '",
+          //     iter->second.def.ShortDebugString(), "'");
+          continue;
         } else if ((*reg)->def.priority() > iter->second.def.priority()) {
           continue;
         }

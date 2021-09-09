@@ -70,7 +70,8 @@ class Conv2DOp : public ConvOp {
   explicit Conv2DOp(OpKernelConstruction* ctx)
       : ConvOp(ctx, /*num_spatial_dims=*/2, /*depthwise=*/false) {}
 };
-REGISTER_XLA_OP(Name("Conv2D").TypeConstraint("T", GetXlaConvTypes()),
+REGISTER_XLA_OP(Name("Conv2D"),
+                // .TypeConstraint("T", GetXlaConvTypes()),
                 Conv2DOp);
 
 class Conv3DOp : public ConvOp {
@@ -133,8 +134,8 @@ class Conv2DBackpropInputOp : public ConvBackpropInputOp {
       : ConvBackpropInputOp(ctx, /*num_spatial_dims=*/2, /*depthwise=*/false) {}
 };
 REGISTER_XLA_OP(Name("Conv2DBackpropInput")
-                    .CompileTimeConstantInput("input_sizes")
-                    .TypeConstraint("T", GetXlaConvTypes()),
+                    .CompileTimeConstantInput("input_sizes"),
+                    // .TypeConstraint("T", GetXlaConvTypes()),
                 Conv2DBackpropInputOp);
 
 class Conv3DBackpropInputOp : public ConvBackpropInputOp {
@@ -195,8 +196,8 @@ class Conv2DBackpropFilterOp : public ConvBackpropFilterOp {
   }
 };
 REGISTER_XLA_OP(Name("Conv2DBackpropFilter")
-                    .CompileTimeConstantInput("filter_sizes")
-                    .TypeConstraint("T", GetXlaConvTypes()),
+                    .CompileTimeConstantInput("filter_sizes"),
+                    // .TypeConstraint("T", GetXlaConvTypes()),
                 Conv2DBackpropFilterOp);
 
 class Conv3DBackpropFilterOp : public ConvBackpropFilterOp {

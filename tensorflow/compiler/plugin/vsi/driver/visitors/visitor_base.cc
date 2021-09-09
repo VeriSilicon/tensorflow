@@ -219,7 +219,7 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
     switch (hlo->opcode())
     {
         case HloOpcode::kAdd:{
-            LOG(INFO) << "PROCESS add";
+            LOG(INFO) << "PROCESS Add";
             auto shape = hlo->shape();
             const HloInstruction* lhs = hlo->operand(0);
             const HloInstruction* rhs = hlo->operand(1);
@@ -385,24 +385,25 @@ Status BaseVisitor::HandleConvert(HloInstruction* hlo){
 
 
 Status BaseVisitor::HandleTuple(HloInstruction* hlo){
-    LOG(INFO) << "PROCESS " << __FUNCTION__;
-    std::cout<<hlo->operand_count()<<std::endl;
+    LOG(INFO) << "PROCESS " << __FUNCTION__ << " : operand count : " << hlo->operand_count();
 
     auto shape = hlo->shape();
-    
-
     int64 input_num = hlo->operand_count();
     for(int64 i=0;i<input_num;i++ ){
         const HloInstruction* input = hlo->operand(i);
+        LOG(INFO) << "opcode : " << input->opcode();
         auto it = kVsiRunTensorContainer_.find(input);
         auto shape = it->second[0]->GetSpec().shape_;
+        std::string s;
+        std::stringstream ss;
+        ss << "shape : ";
         for(auto size:shape){
-            std::cout<<size<<" ";
+            ss << size << " ";
         }
-        std::cout<<std::endl;
+        ss >> s;
+        LOG(INFO) << s;
         kVsiRunTensorContainer_[hlo].push_back(it->second[0]);
     }
-    
 
     // auto it = kVsiRunTensorContainer_.find(input);
     // kVsiRunTensorContainer_[hlo] = it->second;
@@ -414,7 +415,11 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
 
     auto* tuple_hlo = Cast<HloGetTupleElementInstruction>(hlo);
     int64 index = tuple_hlo->tuple_index();
-    LOG(INFO) << "tuple index is"<<index;
+    LOG(INFO) << "tuple_index : " << index;
+    for (int64 i = 0; i < hlo->operand_count(); i++) {
+      const HloInstruction* input = hlo->operand(i);
+      LOG(INFO) << "opcode : " << input->opcode();
+    }
 
     LOG(INFO) << "PROCESS 1" << __FUNCTION__;
     const HloInstruction* input = hlo->operand(0);

@@ -96,7 +96,7 @@ std::vector<DataType> GetVsiNpuSupportedTypes() {
 };
 
 static bool OpFilter(KernelDef* kdef) {
-  std::cout<<"!!!!!!!!!!!1"<<kdef->op()<<std::endl;
+  std::cout << "OpFilter : " << kdef->op() << std::endl;
   if (kdef->op() == "Angle") return false;
   if (kdef->op() == "Complex") return false;
   if (kdef->op() == "ComplexAbs") return false;
@@ -136,7 +136,7 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "LRNGrad") return false;
   if (kdef->op() == "XlaReduceWindow") return false;
 
-  if (kdef->op() == "Conv2DBackpropFilter") return false;
+  // if (kdef->op() == "Conv2DBackpropFilter") return false;
 
   if (kdef->op() == "NonMaxSuppressionV4") return false;
   if (kdef->op() == "Qr") return false;
