@@ -5,6 +5,7 @@ https://tensorflow.google.cn/xla/tutorials/autoclustering_xla
 
 import os
 input("pid: " + str(os.getpid()) +", press enter after attached")
+import numpy as np
 import tensorflow as tf
 #input("pid: " + str(os.getpid()) +", press enter after set breakpoints")
 tf.keras.backend.clear_session()
@@ -81,7 +82,21 @@ else:
   model = generate_model()
 
 model = compile_model(model)
+model.summary()
 
+DUMP_DIR = "2"
+
+def dump_weights(model, prefix):
+  if not os.path.isdir(DUMP_DIR): os.makedirs(DUMP_DIR)
+  if not os.path.isdir(DUMP_DIR + "/" + prefix): os.makedirs(DUMP_DIR + "/" + prefix)
+  for layer in model.layers:
+    for weight in layer.weights:
+      file_name = DUMP_DIR + "/" + prefix + "/weight_" + weight.name.replace("/", "_").replace(":", "_") + ".txt"
+      print(weight.name, weight.shape, " saved in: ", file_name)
+      # print(weight)
+      np.savetxt(file_name, weight.numpy().flatten(), fmt='%.8f')
+
+dump_weights(model, "before")
 #warmup(model, x_train, y_train, x_test, y_test)
 train_model(model, x_train, y_train, x_test, y_test, epochs=1)
 
@@ -92,3 +107,4 @@ if not os.path.exists(MODEL_FILE):
   print("RRR : save model.")
 
 print("RRR : job finish.")
+dump_weights(model, "after")
