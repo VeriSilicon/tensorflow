@@ -23,6 +23,9 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include <unistd.h>
+#include <sys/syscall.h>
+
 #include "tensorflow/compiler/xla/layout_util.h"
 #include "tensorflow/compiler/xla/service/buffer_assignment.h"
 #include "tensorflow/compiler/xla/service/hlo_casting_utils.h"
@@ -411,7 +414,7 @@ Status BaseVisitor::HandleTuple(HloInstruction* hlo){
 }
 
 Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
-    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    LOG(INFO) << "PROCESS " << __FUNCTION__ <<" "<<this<<" "<<syscall(SYS_gettid);;
 
     auto* tuple_hlo = Cast<HloGetTupleElementInstruction>(hlo);
     int64 index = tuple_hlo->tuple_index();
@@ -421,17 +424,13 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
       LOG(INFO) << "opcode : " << input->opcode();
     }
 
-    LOG(INFO) << "PROCESS 1" << __FUNCTION__;
     const HloInstruction* input = hlo->operand(0);
-    LOG(INFO) << "PROCESS 2" << __FUNCTION__;
     auto it = kVsiRunTensorContainer_.find(input);
     if(it == kVsiRunTensorContainer_.end()){
         LOG(INFO) << "PROCESS FUCK ,can not find "<< __FUNCTION__;
     }
-    LOG(INFO) << "PROCESS 3"<< __FUNCTION__;
     
     kVsiRunTensorContainer_[hlo].push_back(it->second[index]);
-    LOG(INFO) << "PROCESS 4" << __FUNCTION__;
 
     // auto shape = hlo->shape();
 
@@ -444,6 +443,13 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
 Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     auto shape = hlo->shape();
+
+    HloComputation* function = hlo->to_apply();
+    //std::cout<<function->parameter_instruction(0)->opcode()<<std::endl;
+    auto sub_hlos = function->parameter_instructions();
+    for(auto sub_hlo :sub_hlos){
+        std::cout<<sub_hlo->opcode()<<std::endl;
+    }
     auto* reduce_hlo = Cast<HloReduceInstruction>(hlo);
 
     //CHECK_EQ(reduce_hlo->input_count(), 1);
@@ -460,7 +466,9 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
       std::vector<int32_t> axis;
       for (uint32_t i = 0; i < dimensions.size(); i++) {
         axis.push_back(static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
+        std::cout << axis[i]<<" ";
       }
+      std::cout<<std::endl;
 
       auto out_tensor =
           createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
@@ -470,6 +478,7 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
       (*reduce).BindInput(input_tensor).BindOutput(out_tensor);
       kVsiRunTensorContainer_[hlo].push_back(out_tensor);
     } else {
+        std::cout<<" input num is "<<input_num<<std::endl;
       for (int64 i = 0; i < input_num; i++) {
         const HloInstruction* input = reduce_hlo->operand(i);
         auto input_tensor = GetEvaluatedTensorFor(input)[0];
@@ -733,9 +742,9 @@ Status BaseVisitor::HandleDot(HloInstruction* hlo){
 
 Status BaseVisitor::HandleParameter(HloInstruction* hlo){
     CHECK_LT(hlo->parameter_number(), arg_literals_.size());
-    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    LOG(INFO) << "PROCESS " << __FUNCTION__ <<" "<<this<<" "<<syscall(SYS_gettid);
     auto& input_literal = arg_literals_[hlo->parameter_number()];
-    VLOG(2) << "Parameter evaluated to: " << input_literal.ToString();
+    LOG(INFO) << "Parameter evaluated to: " << input_literal.ToString();
     DCHECK(Shape::Equal().MinorToMajorOnlyInLayout()(hlo->shape(),
                                                     input_literal.shape()))
         << "parameter shape is: "
@@ -835,7 +844,43 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
                                 tim::vx::PadType::AUTO, ksize, stride, dilation, pad);
 
     auto out_tensor = createTensorFromShape(conv->shape(), tim::vx::TensorAttribute::OUTPUT);
-    convOp->BindInput(input).BindInput(weight).BindOutput(out_tensor);
+    auto out_tensor_spec = out_tensor->GetSpec();
+    auto out_tensor_shape = out_tensor_spec.shape_;
+
+
+    std::vector<uint32_t> out_tensor_tmp_shape;
+    std::vector<uint32_t> perm;
+    if(out_tensor_shape[1] == out_tensor_shape[2]){
+        out_tensor_tmp_shape.push_back(out_tensor_shape[1]);
+        out_tensor_tmp_shape.push_back(out_tensor_shape[2]);
+        out_tensor_tmp_shape.push_back(out_tensor_shape[0]);
+        out_tensor_tmp_shape.push_back(out_tensor_shape[3]);
+        perm.push_back(2);
+        perm.push_back(0);
+        perm.push_back(1);
+        perm.push_back(3);
+    }else if(out_tensor_shape[2] == out_tensor_shape[3]){
+        out_tensor_tmp_shape.push_back(out_tensor_shape[2]);
+        out_tensor_tmp_shape.push_back(out_tensor_shape[3]);
+        out_tensor_tmp_shape.push_back(out_tensor_shape[0]);
+        out_tensor_tmp_shape.push_back(out_tensor_shape[1]);
+        perm.push_back(2);
+        perm.push_back(3);
+        perm.push_back(0);
+        perm.push_back(1);
+    }else{
+        LOG(INFO) << "conv Insert transpose something wrong happen";
+    }
+
+    tim::vx::TensorSpec out_tensor_tmp_sec(out_tensor_spec.datatype_,out_tensor_tmp_shape ,
+                    out_tensor_spec.attr_);
+    auto out_tensor_tmp = graph_->CreateTensor(out_tensor_tmp_sec);
+
+    convOp->BindInput(input).BindInput(weight).BindOutput(out_tensor_tmp);
+
+    auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(perm);
+
+    transposeOp->BindInput(out_tensor_tmp).BindOutput(out_tensor);
 
     kVsiRunTensorContainer_[conv].push_back(out_tensor);
     return Status::OK();

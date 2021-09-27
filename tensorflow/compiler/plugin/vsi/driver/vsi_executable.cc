@@ -34,6 +34,10 @@ limitations under the License.
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/compiler/plugin/vsi/driver/vsi_executor.h"
 
+#include <unistd.h>
+#include <sys/syscall.h>
+
+#include "fstream"
 namespace xla{
 namespace vsiplugin{
 
@@ -106,9 +110,10 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ExecutionInput> arguments,
     HloExecutionProfile* hlo_execution_profile){
-        mtx_.try_lock();
-        LOG(INFO) << "Execute " << module().name();
+        mtx_.lock();
         se::Stream* stream = run_options->stream();
+        LOG(INFO) << "Execute " << module().name() << "visitor_ " <<visitor_.get()<<" steam "<<stream;
+        LOG(INFO) << syscall(SYS_gettid);
         se::StreamExecutor* executor = stream->parent();
         const se::Platform* platform = executor->platform();
 
@@ -157,6 +162,10 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                                 result_shape, run_options->allocator(),
                                 executor->device_ordinal()));
 
+        std::cout<<"tensors information list"<<std::endl;
+
+        uint32_t tensor_num = tensor.size();
+
 
         if(!result_shape.IsTuple()){
             for(auto& pair:result_buffers.buffers()){
@@ -166,6 +175,23 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                     ShapeUtil::GetSubshape(result_buffers.on_device_shape(), index);
                 std::cout<<"no-tuple  result buffer info "<<subshape.ToString()<<std::endl;
                 tensor[0]->CopyDataFromTensor(memory_base.opaque());
+
+                auto spec = tensor[0]->GetSpec();
+                uint32_t tensor_size = 1;
+                for(auto dim : spec.shape_){
+                    tensor_size = tensor_size*dim;
+                }
+                if(spec.datatype_ == tim::vx::DataType::FLOAT32){
+                    for(uint32_t i=0;i<tensor_size;i++){
+                        std::cout<< *(float*)(memory_base.opaque() + sizeof(float)*i)<<" ";
+                    }
+                    std::cout<<std::endl;
+                }else if(spec.datatype_ == tim::vx::DataType::BOOL8){
+                    for(uint32_t i=0;i<tensor_size;i++){
+                        std::cout<< *(bool*)(memory_base.opaque() + i)<<" ";
+                    }
+                    std::cout<<std::endl;  
+                }
             }
         }else{
             int32_t count = 0;
@@ -193,7 +219,23 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                 tensor[count - 1]->CopyDataFromTensor(memory_base.opaque());
                 *(size_t*)(top_memory_base.opaque() + sizeof(void*)*(count - 1)) = (size_t)memory_base.opaque();
                 std::cout<<"sub tensor mem is "<<memory_base.opaque()<<std::endl;
-                
+
+                auto spec = tensor[count - 1]->GetSpec();
+                uint32_t tensor_size = 1;
+                for(auto dim : spec.shape_){
+                    tensor_size = tensor_size*dim;
+                }
+                if(spec.datatype_ == tim::vx::DataType::FLOAT32){
+                    for(uint32_t i=0;i<tensor_size;i++){
+                        std::cout<< *(float*)(memory_base.opaque() + sizeof(float)*i)<<" ";
+                    }
+                    std::cout<<std::endl;
+                }else if(spec.datatype_ == tim::vx::DataType::BOOL8){
+                    for(uint32_t i=0;i<tensor_size;i++){
+                        std::cout<< *(bool*)(memory_base.opaque() + i)<<" ";
+                    }
+                    std::cout<<std::endl;  
+                }
             }
         }
         // auto output_size =
@@ -215,7 +257,16 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
         // for (auto& pair : shaped_buffer.buffers()) {
         //     pair.second = devMem;
         // }
+        std::cout<<"result_buffers is "<<result_buffers<<std::endl;
         ExecutionOutput result(std::move(result_buffers));
+        // static_assert(std::is_same< decltype(module().name()), std::string>::value, "There");
+        // static_assert(std::is_same< decltype(result), ExecutionOutput>::value, "Here");
+
+        // // auto p = std::pair<std::string, ExecutionOutput>(module().name(),result);
+
+
+        // model_map_.insert(std::make_pair(module().name(),std::ref(result)));
+
         mtx_.unlock();
         return result;
     }
