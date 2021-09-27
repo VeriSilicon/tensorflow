@@ -377,6 +377,8 @@ class ExecutorState {
       false;
 
   mutex mu_;
+  mutex process_mu_;
+  int64 num_process_ TF_GUARDED_BY(process_mu_) = 0;
   Status status_ TF_GUARDED_BY(mu_);
 };
 
@@ -628,6 +630,10 @@ void ExecutorState<PropagatorStateType>::ProcessConstTensor(
 template <class PropagatorStateType>
 void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
                                                  int64 scheduled_nsec) {
+  {
+    mutex_lock lock(process_mu_);
+    num_process_++;
+  }
   profiler::TraceMeConsumer activity(
       // From TraceMeProducer in KernelAndDeviceFunc::RunAsync,
       // DirectSession::RunInternal or GraphMgr::ExecuteAsync.
@@ -726,7 +732,7 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
     }
 
     if (vlog_) {
-      VLOG(1) << "Process node: " << id << " step " << params.step_id << " "
+      VLOG(1) << "Process node: " << id << " :: " << num_process_ << " step " << params.step_id << " "
               << SummarizeNodeDef(item.kernel->def())
               << (tagged_node.get_is_dead() ? " is dead" : "")
               << " device: " << device->name();
@@ -775,14 +781,14 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       //   launched_asynchronously = true;
       // } else 
       {
-        LOG(INFO) << "ProcessSync : " << SummarizeNodeDef(item.kernel->def());
+        LOG(INFO) << "ProcessSync : " << id << " :: " << num_process_ << " :: "<< SummarizeNodeDef(item.kernel->def());
         s = ProcessSync(item, &params, &outputs, stats);
       }
     }
 
     if (!launched_asynchronously) {
       if (vlog_) {
-        VLOG(1) << "Synchronous kernel done: " << id << " step "
+        VLOG(1) << "Synchronous kernel done: " << id << " :: " << num_process_ << " step "
                 << params.step_id << " " << SummarizeNodeDef(item.kernel->def())
                 << (tagged_node.get_is_dead() ? " is dead: " : "")
                 << " device: " << device->name();
@@ -815,6 +821,10 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
 
   // This thread of computation is done if completed = true.
   if (completed) ScheduleFinish();
+  {
+    mutex_lock lock(process_mu_);
+    num_process_--;
+  }
 }
 
 template <class PropagatorStateType>

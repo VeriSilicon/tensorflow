@@ -106,7 +106,7 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ExecutionInput> arguments,
     HloExecutionProfile* hlo_execution_profile){
-        mtx_.try_lock();
+        mtx_.lock();
         LOG(INFO) << "Execute " << module().name();
         se::Stream* stream = run_options->stream();
         se::StreamExecutor* executor = stream->parent();
