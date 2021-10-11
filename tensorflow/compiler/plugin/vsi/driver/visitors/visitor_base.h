@@ -119,7 +119,7 @@ class BaseVisitor : public DfsHloVisitor {
     }
 
   static tim::vx::DataType convertTfPrimitiveTypeToTim(xla::PrimitiveType xlaType){
-    std::cout<<"#############"<<xlaType<<std::endl;
+    LOG(INFO) << "convertTfPrimitiveTypeToTim: xlaType: " << xlaType <<std::endl;
       switch(xlaType){
         case PRED:{
           return tim::vx::DataType::BOOL8;

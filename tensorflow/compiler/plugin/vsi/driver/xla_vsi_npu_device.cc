@@ -97,58 +97,84 @@ std::vector<DataType> GetVsiNpuSupportedTypes() {
 
 static bool OpFilter(KernelDef* kdef) {
   std::cout << "OpFilter : " << kdef->op() << std::endl;
-  if (kdef->op() == "Angle") return false;
-  if (kdef->op() == "Complex") return false;
-  if (kdef->op() == "ComplexAbs") return false;
-  if (kdef->op() == "Conj") return false;
-  if (kdef->op() == "FFT") return false;
-  if (kdef->op() == "FFT2D") return false;
-  if (kdef->op() == "FFT3D") return false;
-  if (kdef->op() == "IFFT") return false;
-  if (kdef->op() == "IFFT2D") return false;
-  if (kdef->op() == "IFFT3D") return false;
-  if (kdef->op() == "Imag") return false;
+  if (kdef->op() == "XlaDot") return true;
+  if (kdef->op() == "_Arg") return true;
+  if (kdef->op() == "Add") return true;
+  if (kdef->op() == "VarIsInitializedOp") return true;
+  if (kdef->op() == "NoOp") return true;
+  // if (kdef->op() == "MatMul") return true;
+  if (kdef->op() == "Conv2D") return true;
+  if (kdef->op() == "Conv2DBackpropInput") return true;
+  if (kdef->op() == "Conv2DBackpropFilter") return true;
+  if (kdef->op() == "_Retval") return true;
+  if (kdef->op() == "ResourceApplyGradientDescent") return true;
+  if (kdef->op() == "ReadVariableOp") return true;
+  if (kdef->op() == "AssignAddVariableOp") return true;
 
-  if (kdef->op() == "MaxPool") return false;
-  if (kdef->op() == "MaxPoolV2") return false;
-  if (kdef->op() == "MaxPool3D") return false;
-  if (kdef->op() == "MaxPoolGrad") return false;
-  if (kdef->op() == "MaxPoolGradV2") return false;
-  if (kdef->op() == "MaxPool3DGrad") return false;
-  if (kdef->op() == "MaxPoolGradGrad") return false;
-  if (kdef->op() == "MaxPoolGradGradV2") return false;
-  if (kdef->op() == "MaxPool3DGradGrad") return false;
+  
+  
+  // if (kdef->op() == "Angle") return false;
+  // if (kdef->op() == "Complex") return false;
+  // if (kdef->op() == "ComplexAbs") return false;
+  // if (kdef->op() == "Conj") return false;
+  // if (kdef->op() == "FFT") return false;
+  // if (kdef->op() == "FFT2D") return false;
+  // if (kdef->op() == "FFT3D") return false;
+  // if (kdef->op() == "IFFT") return false;
+  // if (kdef->op() == "IFFT2D") return false;
+  // if (kdef->op() == "IFFT3D") return false;
+  // if (kdef->op() == "Imag") return false;
 
-  if (kdef->op() == "AvgPool") return false;
-  if (kdef->op() == "AvgPool3D") return false;
-  if (kdef->op() == "AvgPoolGrad") return false;
-  if (kdef->op() == "AvgPool3DGrad") return false;
+  // if (kdef->op() == "MaxPool") return false;
+  // if (kdef->op() == "MaxPoolV2") return false;
+  // if (kdef->op() == "MaxPool3D") return false;
+  // if (kdef->op() == "MaxPoolGrad") return false;
+  // if (kdef->op() == "MaxPoolGradV2") return false;
+  // if (kdef->op() == "MaxPool3DGrad") return false;
+  // if (kdef->op() == "MaxPoolGradGrad") return false;
+  // if (kdef->op() == "MaxPoolGradGradV2") return false;
+  // if (kdef->op() == "MaxPool3DGradGrad") return false;
 
-  if (kdef->op() == "Diag") return false;
-  if (kdef->op() == "DiagPart") return false;
-  //if (kdef->op() == "ReverseSequence") return false;
-  if (kdef->op() == "Range") return false;
-  if (kdef->op() == "LinSpace") return false;
-  if (kdef->op() == "DepthToSpace") return false;
-  if (kdef->op() == "SpaceToBatchND") return false;
-  if (kdef->op() == "SpaceToBatch") return false;
-  if (kdef->op() == "LRN") return false;
-  if (kdef->op() == "LRNGrad") return false;
-  if (kdef->op() == "XlaReduceWindow") return false;
+  // if (kdef->op() == "AvgPool") return false;
+  // if (kdef->op() == "AvgPool3D") return false;
+  // if (kdef->op() == "AvgPoolGrad") return false;
+  // if (kdef->op() == "AvgPool3DGrad") return false;
 
-  // if (kdef->op() == "Conv2DBackpropFilter") return false;
+  // if (kdef->op() == "Diag") return false;
+  // if (kdef->op() == "DiagPart") return false;
+  // //if (kdef->op() == "ReverseSequence") return false;
+  // if (kdef->op() == "Range") return false;
+  // if (kdef->op() == "LinSpace") return false;
+  // if (kdef->op() == "DepthToSpace") return false;
+  // if (kdef->op() == "SpaceToBatchND") return false;
+  // if (kdef->op() == "SpaceToBatch") return false;
+  // if (kdef->op() == "LRN") return false;
+  // if (kdef->op() == "LRNGrad") return false;
+  // if (kdef->op() == "XlaReduceWindow") return false;
+  // if (kdef->op() == "Sum") return false;
+  // if (kdef->op() == "Prod") return false;
+  // if (kdef->op() == "Min") return false;
+  // if (kdef->op() == "Max") return false;
+  // if (kdef->op() == "Mean") return false;
+  // if (kdef->op() == "All") return false;
+  // if (kdef->op() == "Any") return false;
+  // if (kdef->op() == "XlaReduce") return false;
+  // if (kdef->op() == "Reduce") return false;
+  // // if (kdef->op() == "Conv2DBackpropFilter") return false;
 
-  if (kdef->op() == "NonMaxSuppressionV4") return false;
-  if (kdef->op() == "Qr") return false;
-  if (kdef->op() == "Real") return false;
-  if (kdef->op() == "Cast") return false;
-  if (kdef->op() == "RandomUniform") return false;
+  // if (kdef->op() == "NonMaxSuppressionV4") return false;
+  // if (kdef->op() == "Qr") return false;
+  // if (kdef->op() == "Real") return false;
+  // if (kdef->op() == "Cast") return false;
+  // if (kdef->op() == "RandomUniform") return false;
 
   if (kdef->op() == "Assert") {
     AddDtypeToKernelDefConstraint("T", DT_STRING, kdef);
+    return true;
   }
   if (kdef->op() == "Const") {
     AddDtypeToKernelDefConstraint("dtype", DT_STRING, kdef);
+    return true;
   }
   if (kdef->op() == "Function" || kdef->op() == "Pipeline" ||
       kdef->op() == "PipelineStage" || kdef->op() == "PipelineStageBackward" ||
@@ -157,9 +183,10 @@ static bool OpFilter(KernelDef* kdef) {
     AddDtypeToKernelDefConstraint("Tout", DT_RESOURCE, kdef);
     AddDtypeToKernelDefConstraint("Tin", DT_VARIANT, kdef);
     AddDtypeToKernelDefConstraint("Tout", DT_VARIANT, kdef);
+    return true;
   }
 
-  return true;
+  return false;
 }
 
 class VsiNpuDevice : public XlaDevice {

@@ -90,7 +90,6 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
     std::vector<uint32_t> perm(dim_size, 1);
 
     auto input_tensor = GetEvaluatedTensorFor(hlo)[0];
-
     /*check if the shape is {WHCN} , if not, a transpose would be inserted to covert the layout. */
     bool is_need_insert_transpose = false;
     for(int i = 0; i < dim_size; i++){
@@ -106,7 +105,19 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
             }
         }
     }
+    std::ostringstream ss, ss1, ss2;
+    for(int i = 0; i < dim_size; i++) {
+        ss << dim_index[i] << " ";
+        ss1 << shape.layout().minor_to_major()[i] << " ";
+        ss2 << perm[i] << " ";
+    }
+    LOG(INFO) << "insertTranspose 0: " << is_need_insert_transpose << " : " << dim_size;
+    LOG(INFO) << "insertTranspose 1: dim_index: " << ss.str();
+    LOG(INFO) << "insertTranspose 2: minor_to_major: " << ss1.str();
+    LOG(INFO) << "insertTranspose 3: perm: " << ss2.str();
+
     if(is_need_insert_transpose){
+        LOG(INFO) << "insertTranspose 4: ";
         auto input_shape = input_tensor->GetShape();
         std::vector<uint32_t> output_shape;
         for(auto d : perm){
@@ -415,23 +426,24 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
 
     auto* tuple_hlo = Cast<HloGetTupleElementInstruction>(hlo);
     int64 index = tuple_hlo->tuple_index();
-    LOG(INFO) << "tuple_index : " << index;
+    LOG(INFO) << "tuple_index : " << index << " :: " << hlo->operand_count();
     for (int64 i = 0; i < hlo->operand_count(); i++) {
       const HloInstruction* input = hlo->operand(i);
       LOG(INFO) << "opcode : " << input->opcode();
     }
 
-    LOG(INFO) << "PROCESS 1" << __FUNCTION__;
+    LOG(INFO) << "PROCESS 1 " << __FUNCTION__;
     const HloInstruction* input = hlo->operand(0);
-    LOG(INFO) << "PROCESS 2" << __FUNCTION__;
+    LOG(INFO) << "PROCESS 2 " << __FUNCTION__;
     auto it = kVsiRunTensorContainer_.find(input);
     if(it == kVsiRunTensorContainer_.end()){
         LOG(INFO) << "PROCESS FUCK ,can not find "<< __FUNCTION__;
+        return Status::OK();
     }
-    LOG(INFO) << "PROCESS 3"<< __FUNCTION__;
+    LOG(INFO) << "PROCESS 3 " << __FUNCTION__;
     
     kVsiRunTensorContainer_[hlo].push_back(it->second[index]);
-    LOG(INFO) << "PROCESS 4" << __FUNCTION__;
+    LOG(INFO) << "PROCESS 4 " << __FUNCTION__;
 
     // auto shape = hlo->shape();
 
@@ -645,6 +657,14 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
         }
     }
 
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " Reverse dims: " << ss.str();
+    }
+
     // auto dims0 = hlo->dimensions();
     // std::vector<int32_t> dims = convert_array<std::vector<int32_t>>(dims0);
     auto reverseOp = graph_->CreateOperation<tim::vx::ops::Reverse>(dims);
@@ -833,9 +853,90 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
             window.dimensions(0).padding_low(), window.dimensions(0).padding_high()};
     auto convOp = graph_->CreateOperation<tim::vx::ops::Conv2d>(dnums.kernel_output_feature_dimension(),
                                 tim::vx::PadType::AUTO, ksize, stride, dilation, pad);
+    {
+        std::ostringstream ss;
+        auto dims = lhs_shape.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " lhs_shape shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = rhs_shape.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " rhs_shape shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = result_shape.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " result_shape shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = window.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i].window_dilation() << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " window_dilation: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = window.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i].base_dilation() << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " base_dilation: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = window.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i].padding_low() << " " << dims[i].padding_high() << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " pad: " << ss.str();
+    }
+
+    std::vector<uint32_t> perm;
+    auto dims0 = lhs_shape.dimensions();
+    auto dims1 = rhs_shape.dimensions();
+    auto dims2 = result_shape.dimensions();
+
 
     auto out_tensor = createTensorFromShape(conv->shape(), tim::vx::TensorAttribute::OUTPUT);
-    convOp->BindInput(input).BindInput(weight).BindOutput(out_tensor);
+    auto out_tensor_spec = out_tensor->GetSpec();
+    auto out_tensor_shape = out_tensor_spec.shape_;
+    std::vector<uint32_t> out_tensor_tmp_shape;
+    if (dims0[0] == dims2[2] && dims1[0] == dims2[3]) {
+        perm = {2,3,0,1};
+        out_tensor_tmp_shape = {out_tensor_shape[2],out_tensor_shape[3],out_tensor_shape[0],out_tensor_shape[1]};
+        LOG(INFO) << __FUNCTION__ << " BackpropFilter X";
+    }
+    else {
+        perm = {2,0,1,3};
+        out_tensor_tmp_shape = {out_tensor_shape[1],out_tensor_shape[2],out_tensor_shape[0],out_tensor_shape[3]};
+        LOG(INFO) << __FUNCTION__ << " Other Conv X";
+    }
+
+    tim::vx::TensorSpec out_tensor_tmp_sec(out_tensor_spec.datatype_,out_tensor_tmp_shape ,
+                    out_tensor_spec.attr_);
+    auto out_tensor_tmp = graph_->CreateTensor(out_tensor_tmp_sec);
+
+    convOp->BindInput(input).BindInput(weight).BindOutput(out_tensor_tmp);
+
+    auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(perm);
+
+    transposeOp->BindInput(out_tensor_tmp).BindOutput(out_tensor);
 
     kVsiRunTensorContainer_[conv].push_back(out_tensor);
     return Status::OK();

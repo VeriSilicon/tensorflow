@@ -35,9 +35,9 @@ y_test = y_test[0:1,:]
 
 def generate_model():
   return tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(16, (3, 3), padding='same', input_shape=x_train.shape[1:], use_bias=False),
-    tf.keras.layers.Activation('relu'),
-    tf.keras.layers.Conv2D(8, (3, 3), use_bias=False),
+    tf.keras.layers.Conv2D(16, (2, 4), padding='same', input_shape=x_train.shape[1:], use_bias=False),
+    # tf.keras.layers.Activation('relu'),
+    tf.keras.layers.Conv2D(8, (4, 2), use_bias=False),
     # tf.keras.layers.Activation('relu'),
     # tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
     # tf.keras.layers.Dropout(0.25),
@@ -83,9 +83,8 @@ else:
   model = generate_model()
 
 model = compile_model(model)
-model.summary()
 
-DUMP_DIR = "4"
+DUMP_DIR = "2"
 
 def dump_tensors(tensors, prefix, tensors_name=None):
   if not os.path.isdir(DUMP_DIR): os.makedirs(DUMP_DIR)
@@ -97,7 +96,6 @@ def dump_tensors(tensors, prefix, tensors_name=None):
   for tensor in ts_zip:
     file_name = DUMP_DIR + "/" + prefix + "/" + tensor[1].name.replace("/", "_").replace(":", "_") + ".txt"
     print(tensor[1].name, tensor[1].shape, " saved in: ", file_name)
-    # print(weight)
     if hasattr(tensor[0], "numpy"):
       num = tensor[0].numpy()
     else:
@@ -117,9 +115,10 @@ def get_weight_grad(model, inputs, outputs):
 
 #warmup(model, x_train, y_train, x_test, y_test)
 train_model(model, x_train, y_train, x_test, y_test, epochs=1)
+model.summary()
 
-# weight_grads = get_weight_grad(model, x_train, y_train)
-# dump_tensors(weight_grads, "grads", model.trainable_weights)
+weight_grads = get_weight_grad(model, x_train, y_train)
+dump_tensors(weight_grads, "grads", model.trainable_weights)
 
 if not os.path.exists(MODEL_FILE):
   json_string = model.to_json()
