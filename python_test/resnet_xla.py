@@ -1,8 +1,3 @@
-"""
-the demo which come from:
-https://blog.csdn.net/my_name_is_learn/article/details/109640715
-"""
-
 import os
 input("pid: " + str(os.getpid()) +", press enter after attached")
 import numpy as np
@@ -15,7 +10,7 @@ tf.debugging.set_log_device_placement(True)
 MODEL_FILE = "resnet.json"
 MODEL_DATA_FILE = "resnet.h5"
 
-def load_data():
+def load_cifar_data():
   (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
   x_train = x_train.astype('float32') / 256
   x_test = x_test.astype('float32') / 256
@@ -25,7 +20,21 @@ def load_data():
   y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
   return ((x_train, y_train), (x_test, y_test))
 
-(x_train, y_train), (x_test, y_test) = load_data()
+# fake data
+def load_fake_data():
+  rng = np.random.default_rng(12345)
+  BATCH = 1
+  x_train = rng.random((BATCH, 224, 224, 3))
+  x_test = rng.random((BATCH, 224, 224, 3))
+
+  y_train = rng.integers(low=0, high=1000, size=(BATCH,1))
+  y_test = rng.integers(low=0, high=1000, size=(BATCH,1))
+  # Convert class vectors to binary class matrices.
+  y_train = tf.keras.utils.to_categorical(y_train, num_classes=1000)
+  y_test = tf.keras.utils.to_categorical(y_test, num_classes=1000)
+  return ((x_train, y_train), (x_test, y_test))
+
+(x_train, y_train), (x_test, y_test) = load_fake_data()
 
 x_train = x_train[0:1,:,:,:]
 y_train = y_train[0:1,:]
@@ -56,8 +65,11 @@ def resiidual_a_or_b(input_x, filters, flag):
     y = tf.keras.layers.Add()([x, input_x])
     return y
 
-
-def generate_offical_model():
+"""
+this resnetv1 demo which come from:
+https://blog.csdn.net/my_name_is_learn/article/details/109640715
+"""
+def generate_v1_model():
   input_layer = tf.keras.layers.Input((224, 224, 3))
   conv1 = Conv_BN_Relu(64, (7, 7), 1, input_layer)
   conv1_Maxpooling = tf.keras.layers.MaxPooling2D((3, 3), strides=2, padding='same')(conv1)
@@ -82,7 +94,7 @@ def generate_offical_model():
   return model
 
 # modify for cifar dataset
-def generate_model():
+def generate_cifar_model():
   input_layer = tf.keras.layers.Input((32, 32, 3))
   conv1 = Conv_BN_Relu(64, (3, 3), 1, input_layer)
   x = resiidual_a_or_b(conv1, 64, 'b')
@@ -101,6 +113,10 @@ def generate_model():
   x = tf.keras.layers.Dense(10)(x)
   y = tf.keras.layers.Softmax(axis=-1)(x)
   model = tf.keras.models.Model([input_layer], [y])
+  return model
+
+def generate_v2_model():
+  model = tf.keras.applications.ResNet50V2()
   return model
 
 def compile_model(model):
@@ -126,7 +142,7 @@ if os.path.exists(MODEL_FILE):
   model = tf.keras.models.model_from_json(json_string)
   model.load_weights(MODEL_DATA_FILE)
 else:
-  model = generate_model()
+  model = generate_v2_model()
 
 model = compile_model(model)
 
