@@ -1863,6 +1863,9 @@ bool NNAPIDelegateKernel::Validate(
       const auto& input = context->tensors[node->outputs->data[0]];
       ExpectIsFloatOrQuant8Operator(context, node, &val_ctx);
       const int input_rank = input.dims->size;
+      for(auto d : input.dims) {
+        Expect(d < 65535, NNAPIValidationFailureType::kUnsupportedOperandSize, "Input dimension larger than 65535", &val_ctx);
+      }
       Expect(input_rank <= 4,
              NNAPIValidationFailureType::kUnsupportedOperandRank,
              "Input rank should be <= 4", &val_ctx);
