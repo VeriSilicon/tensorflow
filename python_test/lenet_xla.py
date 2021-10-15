@@ -117,6 +117,7 @@ if not os.path.exists(MODEL_FILE):
   print("RRR : save model.")
 
 dump_tensors(weights, "after")
+model.save_weights(DUMP_DIR + "/after/" + MODEL_DATA_FILE)
 
 # outputs = [layer.output for layer in model.layers][1:] # all layer outputs except first (input) layer
 # functor = tf.keras.backend.function([model.input], outputs)
