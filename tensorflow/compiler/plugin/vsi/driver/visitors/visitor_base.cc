@@ -90,6 +90,7 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
     std::vector<uint32_t> perm(dim_size, 1);
 
     auto input_tensor = GetEvaluatedTensorFor(hlo)[0];
+
     /*check if the shape is {WHCN} , if not, a transpose would be inserted to covert the layout. */
     bool is_need_insert_transpose = false;
     for(int i = 0; i < dim_size; i++){
@@ -426,6 +427,7 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
 
     auto* tuple_hlo = Cast<HloGetTupleElementInstruction>(hlo);
     int64 index = tuple_hlo->tuple_index();
+
     LOG(INFO) << "tuple_index : " << index << " :: " << hlo->operand_count();
     for (int64 i = 0; i < hlo->operand_count(); i++) {
       const HloInstruction* input = hlo->operand(i);

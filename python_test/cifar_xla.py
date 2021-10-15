@@ -120,6 +120,7 @@ model.summary()
 weight_grads = get_weight_grad(model, x_train, y_train)
 dump_tensors(weight_grads, "grads", model.trainable_weights)
 
+
 if not os.path.exists(MODEL_FILE):
   json_string = model.to_json()
   open(MODEL_FILE, 'w').write(json_string) 

@@ -109,6 +109,7 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
         mtx_.lock();
         LOG(INFO) << "Execute " << module().name() << " :: " << (void*)this
             << " :: "<< tensorflow::Env::Default()->GetCurrentThreadId();
+
         se::Stream* stream = run_options->stream();
         se::StreamExecutor* executor = stream->parent();
         const se::Platform* platform = executor->platform();
