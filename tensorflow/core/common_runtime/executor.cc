@@ -377,8 +377,6 @@ class ExecutorState {
       false;
 
   mutex mu_;
-  mutex process_mu_;
-  int64 num_process_ TF_GUARDED_BY(process_mu_) = 0;
   Status status_ TF_GUARDED_BY(mu_);
 };
 
@@ -428,7 +426,6 @@ ExecutorState<PropagatorStateType>::~ExecutorState() {
 template <class PropagatorStateType>
 void ExecutorState<PropagatorStateType>::RunAsync(Executor::DoneCallback done) {
   TaggedNodeSeq ready;
-
   // Ask the device to fill in the device context map.
   Device* device = immutable_state_.params().device;
   const Status get_context_status =
@@ -630,10 +627,6 @@ void ExecutorState<PropagatorStateType>::ProcessConstTensor(
 template <class PropagatorStateType>
 void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
                                                  int64 scheduled_nsec) {
-  {
-    mutex_lock lock(process_mu_);
-    num_process_++;
-  }
   profiler::TraceMeConsumer activity(
       // From TraceMeProducer in KernelAndDeviceFunc::RunAsync,
       // DirectSession::RunInternal or GraphMgr::ExecuteAsync.
@@ -732,7 +725,7 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
     }
 
     if (vlog_) {
-      VLOG(1) << "Process node: " << id << " :: " << num_process_ << " step " << params.step_id << " "
+      VLOG(1) << "Process node: " << id << " step " << params.step_id << " "
               << SummarizeNodeDef(item.kernel->def())
               << (tagged_node.get_is_dead() ? " is dead" : "")
               << " device: " << device->name();
@@ -775,20 +768,20 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       params.forward_from_array = item.forward_from();
       params.outputs_required_array = item.outputs_required.get();
 
-      // if (item.kernel_is_async) {
-      //   LOG(INFO) << "ProcessAsync : " << SummarizeNodeDef(item.kernel->def());
-      //   ProcessAsync(item, params, tagged_node, first_input, stats);
-      //   launched_asynchronously = true;
-      // } else 
+      if (item.kernel_is_async) {
+        LOG(INFO) << "ProcessAsync : " << SummarizeNodeDef(item.kernel->def());
+        ProcessAsync(item, params, tagged_node, first_input, stats);
+        launched_asynchronously = true;
+      } else
       {
-        LOG(INFO) << "ProcessSync : " << id << " :: " << num_process_ << " :: "<< SummarizeNodeDef(item.kernel->def());
+        LOG(INFO) << "ProcessSync : " << id << " :: "<< SummarizeNodeDef(item.kernel->def());
         s = ProcessSync(item, &params, &outputs, stats);
       }
     }
 
     if (!launched_asynchronously) {
       if (vlog_) {
-        VLOG(1) << "Synchronous kernel done: " << id << " :: " << num_process_ << " step "
+        VLOG(1) << "Synchronous kernel done: " << id << " step "
                 << params.step_id << " " << SummarizeNodeDef(item.kernel->def())
                 << (tagged_node.get_is_dead() ? " is dead: " : "")
                 << " device: " << device->name();
@@ -818,13 +811,8 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       completed = NodeDone(s, &ready, stats, &inline_ready);
     }
   }  // while !inline_ready.empty()
-
   // This thread of computation is done if completed = true.
   if (completed) ScheduleFinish();
-  {
-    mutex_lock lock(process_mu_);
-    num_process_--;
-  }
 }
 
 template <class PropagatorStateType>
@@ -1117,7 +1105,6 @@ template <class PropagatorStateType>
 void ExecutorState<PropagatorStateType>::ScheduleReady(
     TaggedNodeSeq* ready, TaggedNodeReadyQueue* inline_ready) {
   DCHECK(!ready->empty());
-
   int64 scheduled_nsec = 0;
   if (stats_collector_) {
     scheduled_nsec = nodestats::NowInNsec();
@@ -1141,12 +1128,17 @@ void ExecutorState<PropagatorStateType>::ScheduleReady(
     }
   } else {
     const TaggedNode* curr_expensive_node = nullptr;
-    if (inline_ready == nullptr) {
+    if (inline_ready == nullptr) 
+    {
       // Schedule to run all the ready ops in thread pool.
       for (auto& tagged_node : *ready) {
-        runner_([=]() { Process(tagged_node, scheduled_nsec); });
+        runner_([=]() {
+          Process(tagged_node, scheduled_nsec);
+          });
       }
-    } else {
+    } 
+    else 
+    {
       for (auto& tagged_node : *ready) {
         const NodeItem& item = *tagged_node.node_item;
         if (tagged_node.get_is_dead() || !kernel_stats_->IsExpensive(item)) {

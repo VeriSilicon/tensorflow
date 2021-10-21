@@ -7,6 +7,10 @@ import os
 input("pid: " + str(os.getpid()) +", press enter after attached")
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.mixed_precision import experimental as mixed_precision
+policy = mixed_precision.Policy('mixed_bfloat16')
+mixed_precision.set_policy(policy)
+
 #input("pid: " + str(os.getpid()) +", press enter after set breakpoints")
 tf.keras.backend.clear_session()
 tf.config.optimizer.set_jit(True) # Start with XLA disabled.
@@ -44,7 +48,7 @@ def generate_model():
     tf.keras.layers.Flatten(),
     tf.keras.layers.Dense(120, activation='relu'),
     tf.keras.layers.Dense(84, activation='relu'),
-    tf.keras.layers.Dense(10, activation='softmax'),
+    tf.keras.layers.Dense(10, activation='softmax', dtype='float32'),
   ])
 
 def compile_model(model):
@@ -104,7 +108,7 @@ def get_weight_grad(model, inputs, outputs):
   return grad
 
 #warmup(model, x_train, y_train, x_test, y_test)
-train_model(model, x_train, y_train, x_test, y_test, epochs=1)
+train_model(model, x_train, y_train, x_test, y_test, epochs=2)
 model.summary()
 
 weight_grads = get_weight_grad(model, x_train, y_train)

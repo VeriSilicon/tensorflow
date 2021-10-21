@@ -72,9 +72,8 @@ public:
 private:
     std::unique_ptr<BaseVisitor> visitor_;
     VsiExecutor *executor_;
-    std::mutex mtx_; 
 };
-    
+
 } // namespace vsiplugin
 } // namespace xla
 #endif

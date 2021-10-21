@@ -101,12 +101,12 @@ VsiExecutable::~VsiExecutable()
 //     //                                .AsDeviceMemoryBase();
 
 // }
-
+tensorflow::mutex vsi_executable_mtx;
 StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ExecutionInput> arguments,
     HloExecutionProfile* hlo_execution_profile){
-        mtx_.lock();
+        tensorflow::mutex_lock l(vsi_executable_mtx); 
         LOG(INFO) << "Execute " << module().name() << " :: " << (void*)this
             << " :: "<< tensorflow::Env::Default()->GetCurrentThreadId();
 
@@ -166,7 +166,7 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                 se::DeviceMemoryBase& memory_base = pair.second;
                 const Shape& subshape =
                     ShapeUtil::GetSubshape(result_buffers.on_device_shape(), index);
-                std::cout<<"no-tuple  result buffer info "<<subshape.ToString()<<std::endl;
+                LOG(INFO) << "no-tuple  result buffer info " << subshape.ToString();
                 tensor[0]->CopyDataFromTensor(memory_base.opaque());
             }
         }else{
@@ -177,7 +177,7 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
             for(auto& pair:result_buffers.buffers()){
                 if(count == 0){
                     top_memory_base = pair.second;
-                    std::cout<<"top_memory_base location is "<<top_memory_base.opaque()<<std::endl;
+                    LOG(INFO) << "top_memory_base location is " << top_memory_base.opaque();
                     count++;
                 }
             }
@@ -190,12 +190,11 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                 se::DeviceMemoryBase& memory_base = pair.second;
                 const Shape& subshape =
                     ShapeUtil::GetSubshape(result_buffers.on_device_shape(), index);
-                std::cout<<"tuple result buffer info "<<subshape.ToString()<<std::endl;
+                LOG(INFO) << "tuple result buffer info " << subshape.ToString();
 
                 tensor[count - 1]->CopyDataFromTensor(memory_base.opaque());
                 *(size_t*)(top_memory_base.opaque() + sizeof(void*)*(count - 1)) = (size_t)memory_base.opaque();
-                std::cout<<"sub tensor mem is "<<memory_base.opaque()<<std::endl;
-                
+                LOG(INFO) << "sub tensor mem is " << memory_base.opaque();
             }
         }
         // auto output_size =
@@ -218,20 +217,21 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
         //     pair.second = devMem;
         // }
         ExecutionOutput result(std::move(result_buffers));
-        mtx_.unlock();
+        LOG(INFO) << "Leave " << module().name() << " :: " << (void*)this
+            << " :: "<< tensorflow::Env::Default()->GetCurrentThreadId();
         return result;
     }
 
 StatusOr<std::vector<ScopedShapedBuffer>> VsiExecutable::ExecuteOnStreams(
     absl::Span<const ServiceExecutableRunOptions> run_options,
     absl::Span<const absl::Span<const ShapedBuffer* const>> arguments){
-        LOG(FATAL)<<"not implement";
+        LOG(FATAL) << "not implement";
     }
 
 Status VsiExecutable::PopulateExecutionProfile(
     ExecutionProfile* execution_profile,
     HloExecutionProfile* hlo_execution_profile, se::Stream* stream){
-        LOG(FATAL)<<"not implement";
+        LOG(FATAL) << "not implement";
     }
 
 } // namespace vsiplugin

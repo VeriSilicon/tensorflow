@@ -37,7 +37,7 @@ def generate_model():
   return tf.keras.models.Sequential([
     tf.keras.layers.Conv2D(16, (2, 4), padding='same', input_shape=x_train.shape[1:], use_bias=False),
     # tf.keras.layers.Activation('relu'),
-    tf.keras.layers.Conv2D(8, (4, 2), use_bias=False),
+    tf.keras.layers.Conv2D(8, (4, 2), padding='same', use_bias=False),
     # tf.keras.layers.Activation('relu'),
     # tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
     # tf.keras.layers.Dropout(0.25),
@@ -84,7 +84,7 @@ else:
 
 model = compile_model(model)
 
-DUMP_DIR = "2"
+DUMP_DIR = "1"
 
 def dump_tensors(tensors, prefix, tensors_name=None):
   if not os.path.isdir(DUMP_DIR): os.makedirs(DUMP_DIR)
@@ -113,6 +113,18 @@ def get_weight_grad(model, inputs, outputs):
   grad = tape.gradient(loss, model.trainable_weights)
   return grad
 
+# def get_input_grad(model, inputs, outputs, tensors):
+#   with tf.GradientTape() as tape:
+#     pred = model(inputs)
+#     tensors0 = []
+#     for t in tensors:
+#       t1 = tf.Variable(t)
+#       tensors0.append(t1)
+#     loss = model.compiled_loss(tf.convert_to_tensor(outputs), pred, None,
+#                                    regularization_losses=model.losses)
+#   grad = tape.gradient(loss, tensors0)
+#   return grad
+
 #warmup(model, x_train, y_train, x_test, y_test)
 train_model(model, x_train, y_train, x_test, y_test, epochs=1)
 model.summary()
@@ -120,6 +132,9 @@ model.summary()
 weight_grads = get_weight_grad(model, x_train, y_train)
 dump_tensors(weight_grads, "grads", model.trainable_weights)
 
+# outputs = [layer.output for layer in model.layers][1:]
+# input_grads = get_input_grad(model, x_train, y_train, outputs)
+# dump_tensors(weight_grads, "grads_x", outputs)
 
 if not os.path.exists(MODEL_FILE):
   json_string = model.to_json()
@@ -128,6 +143,7 @@ if not os.path.exists(MODEL_FILE):
   print("RRR : save model.")
 
 dump_tensors(weights, "after")
+model.save_weights(DUMP_DIR + "/after/" + MODEL_DATA_FILE)
 
 # outputs = [layer.output for layer in model.layers][1:] # all layer outputs except first (input) layer
 # functor = tf.keras.backend.function([model.input], outputs)

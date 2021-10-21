@@ -164,7 +164,8 @@ bool TensorImpl::Init() {
   memset(&attr, 0x00, sizeof(attr));
   attr.dim_num = spec_.shape_.size();
   attr.is_const = static_cast<bool>(spec_.attr_ & TensorAttribute::CONSTANT);
-  attr.vtl = static_cast<bool>(spec_.attr_ & TensorAttribute::TRANSIENT);
+  // attr.vtl = static_cast<bool>(spec_.attr_ & TensorAttribute::TRANSIENT);
+  attr.vtl = false;
 
   // Use auto shape for virtual tensors so that tim-vx can perform it's own
   // shape inference
@@ -180,8 +181,10 @@ bool TensorImpl::Init() {
 
   if ((spec_.attr_ & TensorAttribute::INPUT) ||
       (spec_.attr_ & TensorAttribute::OUTPUT)) {
-    id_ = vsi_nn_AddTensorFromHandle(graph_->graph(), VSI_NN_TENSOR_ID_AUTO,
-                                     &attr, nullptr);
+    // id_ = vsi_nn_AddTensorFromHandle(graph_->graph(), VSI_NN_TENSOR_ID_AUTO,
+    //                                  &attr, nullptr);
+    id_ = vsi_nn_AddTensor(graph_->graph(), VSI_NN_TENSOR_ID_AUTO, &attr,
+                           nullptr);
   } else {
     id_ = vsi_nn_AddTensor(graph_->graph(), VSI_NN_TENSOR_ID_AUTO, &attr,
                            nullptr);

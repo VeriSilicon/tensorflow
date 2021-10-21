@@ -22,6 +22,7 @@ limitations under the License.
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 #include "tensorflow/compiler/xla/layout_util.h"
 #include "tensorflow/compiler/xla/service/buffer_assignment.h"
@@ -215,8 +216,8 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             auto inout_tensor = GetEvaluatedTensorFor(input)[0];
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
-            auto Sqrt = graph_->CreateOperation<tim::vx::ops::Sqrt>();
-            (*Sqrt).BindInput(inout_tensor).BindOutput(out_tensor);
+            auto sqrt = graph_->CreateOperation<tim::vx::ops::Sqrt>();
+            (*sqrt).BindInput(inout_tensor).BindOutput(out_tensor);
 
             kVsiRunTensorContainer_[hlo].push_back(out_tensor);
             break;
@@ -366,6 +367,24 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
             auto maximum = graph_->CreateOperation<tim::vx::ops::Maximum>();
             (*maximum).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+
+            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            break;
+        }
+        case HloOpcode::kMinimum:{
+            LOG(INFO) << "PROCESS Maximum";
+            auto shape = hlo->shape();
+            const HloInstruction* lhs = hlo->operand(0);
+            const HloInstruction* rhs = hlo->operand(1);
+            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+
+            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
+            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+            auto minimum = graph_->CreateOperation<tim::vx::ops::Minimum>();
+            (*minimum).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
             //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
             kVsiRunTensorContainer_[hlo].push_back(out_tensor);
@@ -645,8 +664,32 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
     std::vector<uint32_t> tmpdims;
     auto input_minor_to_major = input->shape().layout().minor_to_major();
 
-    for(auto d: input_minor_to_major){
-        tmpdims.push_back(hlo->dimensions(d));
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < input_minor_to_major.size(); i++) {
+            ss << input_minor_to_major[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " input_minor_to_major: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < hlo->dimensions().size(); i++) {
+            ss << hlo->dimensions(i) << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " hlo->dimensions: " << ss.str();
+    }
+
+    for (int i = 0; i < hlo->dimensions().size(); i++){
+        tmpdims.push_back(hlo->dimensions(i));
+    }
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < tmpdims.size(); i++) {
+            ss << tmpdims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " tmpdims: " << ss.str();
     }
 
     std::vector<int32_t> dims;
@@ -657,6 +700,7 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
                 dims.push_back(i);
             }
         }
+        // dims.push_back(d);
     }
 
     {
@@ -664,11 +708,21 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
         for(int i = 0; i < dims.size(); i++) {
             ss << dims[i] << " ";
         }
-        LOG(INFO) << __FUNCTION__ << " Reverse dims: " << ss.str();
+        LOG(INFO) << __FUNCTION__ << " Reverse dims0: " << ss.str();
     }
 
     // auto dims0 = hlo->dimensions();
     // std::vector<int32_t> dims = convert_array<std::vector<int32_t>>(dims0);
+    std::reverse(dims.begin(),dims.end());
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " Reverse dims1: " << ss.str();
+    }
+
     auto reverseOp = graph_->CreateOperation<tim::vx::ops::Reverse>(dims);
     reverseOp->BindInput(in_tensor).BindOutput(out_tensor);
 
