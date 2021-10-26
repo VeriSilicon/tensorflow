@@ -344,7 +344,9 @@ private:
     // std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
     //     kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
     std::vector<Literal> arg_literals_;
+    std::unordered_map<int64, uint32_t> kVsiInputId_ TF_GUARDED_BY(mutex_);
     std::shared_ptr<tim::vx::Graph> graph_;
+    bool is_build_ = false;
 };
 
 }  // namespace vsiplugin

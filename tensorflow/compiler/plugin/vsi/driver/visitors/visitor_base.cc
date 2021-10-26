@@ -64,7 +64,28 @@ std::vector<std::shared_ptr<tim::vx::Tensor>> BaseVisitor::evaluate(
     const HloComputation& computation,
     std::vector<Literal>& argument_literals){
     arg_literals_ = std::move(argument_literals);
-    computation.Accept(this);
+    if(is_build_ && !arg_literals_.empty()){
+        auto input_tensors = graph_->InputsTensor();
+
+        CHECK_EQ(arg_literals_.size(), input_tensors.size());
+
+        for(uint32_t i =0;i<arg_literals_.size();i++){
+            auto& input_literal = arg_literals_[i];
+            uint32_t input_id = kVsiInputId_[static_cast<int64>(i)];
+
+            for(auto input_tensor : input_tensors){
+                if(input_id == input_tensor->GetId()){
+                    ShapeIndex shapeIndex({});
+                    void *buffer = input_literal.untyped_data(shapeIndex);
+
+                    input_tensor->CopyDataToTensor(buffer);
+                    break;
+                }
+            }
+        }
+    }else{
+        computation.Accept(this);
+    }
     graph_->PrintGraph();
     std::vector<std::shared_ptr<tim::vx::Tensor>> fault_result;
     if (!graph_->Compile()) {
@@ -75,6 +96,8 @@ std::vector<std::shared_ptr<tim::vx::Tensor>> BaseVisitor::evaluate(
         LOG(FATAL) << "Run graph fail";
         return fault_result;
     }
+    is_build_ = true;
+
     return GetEvaluatedTensorFor(computation.root_instruction());
 }
 
@@ -825,6 +848,7 @@ Status BaseVisitor::HandleParameter(HloInstruction* hlo){
             auto timTensor = createTensorFromShape(input_literal.shape());
             timTensor->CopyDataToTensor(buffer);
             kVsiRunTensorContainer_[hlo].push_back(timTensor);
+            kVsiInputId_[hlo->parameter_number()] = timTensor->GetId();
         }
 
     return Status::OK();

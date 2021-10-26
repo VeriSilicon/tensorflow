@@ -113,9 +113,9 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "VarIsInitializedOp") return true;
   if (kdef->op() == "NoOp") return true;
   // if (kdef->op() == "MatMul") return true;
-  // if (kdef->op() == "Conv2D") return true;
-  // if (kdef->op() == "Conv2DBackpropInput") return true;
-  // if (kdef->op() == "Conv2DBackpropFilter") return true;
+  if (kdef->op() == "Conv2D") return true;
+  if (kdef->op() == "Conv2DBackpropInput") return true;
+  if (kdef->op() == "Conv2DBackpropFilter") return true;
   if (kdef->op() == "_Retval") return true;
   if (kdef->op() == "ResourceApplyGradientDescent") return true;
   if (kdef->op() == "ReadVariableOp") return true;

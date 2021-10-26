@@ -7,9 +7,9 @@ import os
 input("pid: " + str(os.getpid()) +", press enter after attached")
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.mixed_precision import experimental as mixed_precision
-policy = mixed_precision.Policy('mixed_bfloat16')
-mixed_precision.set_policy(policy)
+# from tensorflow.keras.mixed_precision import experimental as mixed_precision
+# policy = mixed_precision.Policy('mixed_bfloat16')
+# mixed_precision.set_policy(policy)
 
 #input("pid: " + str(os.getpid()) +", press enter after set breakpoints")
 tf.keras.backend.clear_session()
@@ -33,8 +33,8 @@ def load_data():
 
 (x_train, y_train), (x_test, y_test) = load_data()
 
-x_train = x_train[0:1,:,:,:]
-y_train = y_train[0:1,:]
+x_train = x_train[0:5,:,:,:]
+y_train = y_train[0:5,:]
 
 x_test = x_test[0:1,:,:,:]
 y_test = y_test[0:1,:]
@@ -61,7 +61,7 @@ def compile_model(model):
   return model
 
 def train_model(model, x_train, y_train, x_test, y_test, epochs=1):
-  model.fit(x_train, y_train, batch_size=1, epochs=epochs, validation_data=(x_test, y_test), shuffle=True)
+  model.fit(x_train, y_train, batch_size=5, epochs=epochs, validation_data=(x_test, y_test), shuffle=True)
 
 def warmup(model, x_train, y_train, x_test, y_test):
   # Warm up the JIT, we do not wish to measure the compilation time.
@@ -78,7 +78,7 @@ else:
 
 model = compile_model(model)
 
-DUMP_DIR = "2"
+DUMP_DIR = "npu"
 
 def dump_tensors(tensors, prefix, tensors_name=None):
   if not os.path.isdir(DUMP_DIR): os.makedirs(DUMP_DIR)
@@ -108,7 +108,7 @@ def get_weight_grad(model, inputs, outputs):
   return grad
 
 #warmup(model, x_train, y_train, x_test, y_test)
-train_model(model, x_train, y_train, x_test, y_test, epochs=2)
+train_model(model, x_train, y_train, x_test, y_test, epochs=4)
 model.summary()
 
 weight_grads = get_weight_grad(model, x_train, y_train)
