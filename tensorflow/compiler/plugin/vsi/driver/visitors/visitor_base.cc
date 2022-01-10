@@ -987,6 +987,9 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
         LOG(INFO) << __FUNCTION__ << " pad: " << ss.str();
     }
 
+    LOG(INFO) << __FUNCTION__ << " batch_dimension: " << dnums.input_batch_dimension()
+        << " " << dnums.output_batch_dimension();
+
     std::vector<uint32_t> perm;
     auto dims0 = lhs_shape.dimensions();
     auto dims1 = rhs_shape.dimensions();
@@ -997,7 +1000,31 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
     auto out_tensor_spec = out_tensor->GetSpec();
     auto out_tensor_shape = out_tensor_spec.shape_;
     std::vector<uint32_t> out_tensor_tmp_shape;
-    if (dims0[0] == dims2[2] && dims1[0] == dims2[3]) {
+    // In HloConvolution:
+    // lhs layout is [batch, z/depth/features, spatial_dims], also known as NCHW. 
+    // rhs layout is [output-z, input-z, spatial_dims], also known as OIHW.
+    // output layout is [batch, z, spatial_dims], it is as same as lhs layout.
+    //
+    // For example: the first Conv2D in lenet.
+    // Conv2D:
+    // lhs shape: [8, 1, 28, 28]
+    // rhs shape: [6, 1, 5, 5]
+    // output shape: [8, 24, 24, 6]
+    // batch_dimension are 0, both lhs and output.
+    //
+    // Conv2DBackpropInput:
+    // lhs shape: [8, 6, 24, 24]
+    // rhs shape: [1, 6, 5, 5]
+    // output shape: [8, 28, 28, 1]
+    // batch_dimension are 0, both lhs and output.
+    //
+    // But when Conv2DBackpropFilter :
+    // lhs shape: [1, 8, 28, 28]
+    // rhs shape: [6, 8, 24, 24]
+    // output shape: [5, 5, 1, 6]
+    // lhs batch_dimension is 0, output batch_dimension is 2.
+
+    if (dnums.input_batch_dimension() != dnums.output_batch_dimension()) {
         perm = {2,3,0,1};
         out_tensor_tmp_shape = {out_tensor_shape[2],out_tensor_shape[3],out_tensor_shape[0],out_tensor_shape[1]};
         LOG(INFO) << __FUNCTION__ << " BackpropFilter X";
