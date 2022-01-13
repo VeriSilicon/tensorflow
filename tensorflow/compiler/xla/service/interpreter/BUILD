@@ -26,10 +26,11 @@ cc_library(
 cc_library(
     name = "compiler",
     srcs = ["compiler.cc"],
-    hdrs = ["compiler.h"],
+    hdrs = ["compiler.h" ],
     deps = [
         ":executable",
         ":platform_id",
+        "//tensorflow/compiler/plugin/vsi/driver:vsi_executable",
         "//tensorflow/compiler/xla:status",
         "//tensorflow/compiler/xla:status_macros",
         "//tensorflow/compiler/xla:statusor",

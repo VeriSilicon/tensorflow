@@ -44,9 +44,12 @@ limitations under the License.
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/platform/types.h"
 
+#include "tensorflow/compiler/plugin/vsi/driver/vsi_executable.h"
+
 namespace xla {
 namespace interpreter {
 
+#define VSI_EXECUTABLE 0
 namespace {
 
 // Handles custom_call ops during evaluation by routing them through the global
@@ -101,7 +104,22 @@ StatusOr<std::unique_ptr<HloModule>> InterpreterCompiler::RunHloPasses(
   TF_RETURN_IF_ERROR(RunHloOptimization(hlo_module.get()));
   return std::move(hlo_module);
 }
+#if VSI_EXECUTABLE
+StatusOr<std::unique_ptr<Executable>> InterpreterCompiler::RunBackend(
+    std::unique_ptr<HloModule> hlo_module, se::StreamExecutor* stream_exec,
+    se::DeviceMemoryAllocator* /*device_allocator*/) {
+  TF_RET_CHECK(stream_exec != nullptr);
 
+  VLOG(1) << "Run backend " << hlo_module->name();
+
+  // Create executable from only the Hlo module.
+  std::unique_ptr<Executable> executable =
+      absl::make_unique<vsiplugin::VsiExecutable>(
+          std::move(hlo_module));
+
+  return std::move(executable);
+}
+#else
 StatusOr<std::unique_ptr<Executable>> InterpreterCompiler::RunBackend(
     std::unique_ptr<HloModule> hlo_module, se::StreamExecutor* stream_exec,
     const CompileOptions& /*options*/) {
@@ -125,6 +143,8 @@ StatusOr<std::unique_ptr<Executable>> InterpreterCompiler::RunBackend(
 
   return std::move(executable);
 }
+
+#endif
 
 StatusOr<std::vector<std::unique_ptr<Executable>>> InterpreterCompiler::Compile(
     std::unique_ptr<HloModuleGroup> module_group,
@@ -165,7 +185,12 @@ se::Platform::Id InterpreterCompiler::PlatformId() const {
 
 HloCostAnalysis::ShapeSizeFunction InterpreterCompiler::ShapeSizeBytesFunction()
     const {
+#if VSI_EXECUTABLE
+  LOG(FATAL)<<"NOT IMPLEMENT In VSI";
+  return nullptr;
+#else
   return InterpreterExecutable::ShapeSizeBytes;
+#endif
 }
 
 static bool InitModule() {

@@ -59,7 +59,7 @@ namespace xla {
 
   TF_ASSIGN_OR_RETURN(std::unique_ptr<Backend> backend,
                       Backend::CreateBackend(backend_options));
-
+  LOG(INFO)<<"========="<<platform->Name();
   std::unique_ptr<LocalService> service(
       new LocalService(options, std::move(backend)));
   return std::move(service);

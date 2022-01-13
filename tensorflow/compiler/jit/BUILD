@@ -70,7 +70,8 @@ cc_library(
     deps = [
         ":xla_cpu_device",
         ":xla_cpu_jit",
-        "//tensorflow/compiler/plugin",
+        "//tensorflow/compiler/plugin:plugin_device",
+        "//tensorflow/compiler/plugin:plugin",
     ] + if_cuda_or_rocm([
         ":xla_gpu_device",
         ":xla_gpu_jit",

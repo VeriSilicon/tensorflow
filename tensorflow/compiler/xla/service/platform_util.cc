@@ -93,14 +93,25 @@ PlatformUtil::GetSupportedPlatforms() {
     return NotFound("no platforms found");
   } else if (platforms.size() == 1) {
     platform = platforms[0];
-  } else if (platforms.size() == 2) {
-    for (int i = 0; i < 2; i++) {
-      if (absl::AsciiStrToLower(platforms[i]->Name()) == kInterpreter &&
-          absl::AsciiStrToLower(platforms[1 - i]->Name()) != kInterpreter) {
-        platform = platforms[1 - i];
+  } else {
+    // for (int i = 0; i < 2; i++) {
+    //   if (absl::AsciiStrToLower(platforms[i]->Name()) == kInterpreter &&
+    //       absl::AsciiStrToLower(platforms[1 - i]->Name()) != kInterpreter) {
+    //     platform = platforms[1 - i];
+    //     break;
+    //   }
+    // }
+    for (int i = 0; i < platforms.size(); i++){
+      LOG(INFO) << "platform ["<< i<< "] = "<< platforms[i]->Name();
+    }
+    for (int i = 0; i < platforms.size(); i++) {
+      //if (absl::AsciiStrToLower(platforms[i]->Name()) == kInterpreter ) {
+      if (absl::AsciiStrToLower(platforms[i]->Name()) == "vsi-npu" ) {
+        platform = platforms[i];
         break;
       }
     }
+
   }
   if (platform != nullptr) {
     return platform;

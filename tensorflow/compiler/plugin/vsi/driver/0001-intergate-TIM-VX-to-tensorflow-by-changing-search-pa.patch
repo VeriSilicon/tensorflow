@@ -1,0 +1,48 @@
+From 17e63fd1fb61a9153f61dda30399f7a64e5d32ea Mon Sep 17 00:00:00 2001
+From: Jia Juku <juku.jia@verisilicon.com>
+Date: Tue, 12 Jan 2021 09:54:22 +0800
+Subject: [PATCH] intergate TIM-VX to tensorflow by changing search path in
+ BUILD file
+
+Signed-off-by: Jia Juku <juku.jia@verisilicon.com>
+
+diff --git a/BUILD.bazel b/BUILD.bazel
+index 17f39de..f2f5114 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -34,7 +34,7 @@ cc_library(
+         "src/tim/vx/ops/*.cc"
+     ]),
+     deps = [
+-        "//src/tim/vx/internal:ovxlibimpl",
++        "//tensorflow/compiler/plugin/vsi/driver/TIM-VX/src/tim/vx/internal:ovxlibimpl",
+     ],
+     linkstatic = True,
+     strip_include_prefix = "include",
+diff --git a/prebuilt-sdk/BUILD b/prebuilt-sdk/BUILD
+index c85f2e8..53a1561 100644
+--- a/prebuilt-sdk/BUILD
++++ b/prebuilt-sdk/BUILD
+@@ -8,6 +8,6 @@ config_setting(
+ cc_library(
+     name = "VIV_SDK_LIB",
+     deps = select({
+-        "//conditions:default": ["//prebuilt-sdk/x86_64_linux:VIV_SDK_LIB"],
++        "//conditions:default": ["//tensorflow/compiler/plugin/vsi/driver/TIM-VX/prebuilt-sdk/x86_64_linux:VIV_SDK_LIB"],
+     }),
+ )
+diff --git a/src/tim/vx/internal/BUILD b/src/tim/vx/internal/BUILD
+index ae21b3d..00fcd00 100644
+--- a/src/tim/vx/internal/BUILD
++++ b/src/tim/vx/internal/BUILD
+@@ -218,6 +218,6 @@ cc_library(
+     ] + [":kernel_srcs"]
+       + [":operation_srcs"]
+       + [":custom_srcs"],
+-    deps = ["//prebuilt-sdk:VIV_SDK_LIB"]
++    deps = ["//tensorflow/compiler/plugin/vsi/driver/TIM-VX/prebuilt-sdk:VIV_SDK_LIB"]
+ )
+ 
+-- 
+2.17.1
+

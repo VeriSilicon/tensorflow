@@ -21,3 +21,17 @@ tf_workspace1()
 load("@//tensorflow:workspace0.bzl", "tf_workspace0")
 
 tf_workspace0()
+
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "TIM_VX",
+    remote = "https://github.com/VeriSilicon/TIM-VX.git",
+    tag = "v1.1.37",
+    verbose = True,
+)
+
+# local_repository(
+#     name = "TIM_VX",
+#     path = "tensorflow/compiler/plugin/vsi/driver/TIM-VX",
+# )

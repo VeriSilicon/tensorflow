@@ -467,7 +467,6 @@ void ExecutorState<PropagatorStateType>::RunTask(Closure&& c) {
 template <class PropagatorStateType>
 void ExecutorState<PropagatorStateType>::RunAsync(Executor::DoneCallback done) {
   TaggedNodeSeq ready;
-
   // Ask the device to fill in the device context map.
   Device* device = immutable_state_.params().device;
   const Status get_context_status =
@@ -618,7 +617,7 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
     Status s = ProcessOutputs(*state->item, &state->ctx, outputs.data(), stats);
     nodestats::SetMemory(stats, &state->ctx);
     if (vlog_) {
-      VLOG(2) << "Async kernel done: " << state->item->node_id << " step "
+      VLOG(1) << "Async kernel done: " << state->item->node_id << " step "
               << step_id_ << " " << SummarizeNodeDef(state->item->kernel->def())
               << (state->tagged_node.get_is_dead() ? " is dead" : "")
               << " device: " << device->name();
@@ -818,16 +817,19 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       params.outputs_required_array = item.outputs_required.get();
 
       if (item.kernel_is_async) {
+        LOG(INFO) << "ProcessAsync : " << SummarizeNodeDef(item.kernel->def());
         ProcessAsync(item, params, tagged_node, first_input, stats);
         launched_asynchronously = true;
-      } else {
+      } else
+      {
+        LOG(INFO) << "ProcessSync : " << id << " :: "<< SummarizeNodeDef(item.kernel->def());
         s = ProcessSync(item, &params, &outputs, stats);
       }
     }
 
     if (!launched_asynchronously) {
       if (vlog_) {
-        VLOG(2) << "Synchronous kernel done: " << id << " step "
+        VLOG(1) << "Synchronous kernel done: " << id << " step "
                 << params.step_id << " " << SummarizeNodeDef(item.kernel->def())
                 << (tagged_node.get_is_dead() ? " is dead: " : "")
                 << " device: " << device->name();
@@ -857,7 +859,6 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       completed = NodeDone(s, &ready, stats, &inline_ready);
     }
   }  // while !inline_ready.empty()
-
   // This thread of computation is done if completed = true.
   if (completed) ScheduleFinish();
 }
@@ -1183,12 +1184,15 @@ void ExecutorState<PropagatorStateType>::ScheduleReady(
     }
   } else {
     const TaggedNode* curr_expensive_node = nullptr;
-    if (inline_ready == nullptr) {
+    if (inline_ready == nullptr) 
+    {
       // Schedule to run all the ready ops in thread pool.
       for (auto& tagged_node : *ready) {
         RunTask([=]() { Process(tagged_node, scheduled_nsec); });
       }
-    } else {
+    } 
+    else 
+    {
       for (auto& tagged_node : *ready) {
         const NodeItem& item = *tagged_node.node_item;
         if (tagged_node.get_is_dead() || !kernel_stats_->IsExpensive(item)) {
