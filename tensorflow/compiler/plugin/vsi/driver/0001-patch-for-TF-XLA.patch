@@ -1,0 +1,45 @@
+From 5d3f05b4aadf3706447ebd53509c3902e62c3579 Mon Sep 17 00:00:00 2001
+From: Jing Tang <jing.tang@verisilicon.com>
+Date: Tue, 22 Feb 2022 14:17:00 +0800
+Subject: [PATCH] patch for TF XLA
+
+---
+ src/tim/vx/tensor.cc | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/src/tim/vx/tensor.cc b/src/tim/vx/tensor.cc
+index 5979b43..492f80d 100644
+--- a/src/tim/vx/tensor.cc
++++ b/src/tim/vx/tensor.cc
+@@ -173,7 +173,8 @@ bool TensorImpl::Init() {
+   memset(&attr, 0x00, sizeof(attr));
+   attr.dim_num = spec_.shape_.size();
+   attr.is_const = static_cast<bool>(spec_.attr_ & TensorAttribute::CONSTANT);
+-  attr.vtl = static_cast<bool>(spec_.attr_ & TensorAttribute::TRANSIENT);
++  // attr.vtl = static_cast<bool>(spec_.attr_ & TensorAttribute::TRANSIENT);
++  attr.vtl = false;
+ 
+   // Use auto shape for virtual tensors so that tim-vx can perform it's own
+   // shape inference
+@@ -194,11 +195,13 @@ bool TensorImpl::Init() {
+       attr.vsi_memory_type = VSI_MEMORY_TYPE_DMABUF;
+     }
+ 
+-    id_ = vsi_nn_AddTensorFromHandle(
+-        graph_->graph(),
+-        VSI_NN_TENSOR_ID_AUTO,  // DMABUF's fd is created by TensorFromHandle as input or output,
+-        &attr,
+-        fd_ != -1 ? (uint8_t*)fd_ : nullptr);  // and cannot be set to const
++    // id_ = vsi_nn_AddTensorFromHandle(
++    //     graph_->graph(),
++    //     VSI_NN_TENSOR_ID_AUTO,  // DMABUF's fd is created by TensorFromHandle as input or output,
++    //     &attr,
++    //     fd_ != -1 ? (uint8_t*)fd_ : nullptr);  // and cannot be set to const
++    id_ = vsi_nn_AddTensor(graph_->graph(), VSI_NN_TENSOR_ID_AUTO, &attr,
++                           nullptr);
+ #else
+     if (-1 == fd_) {
+       id_ = vsi_nn_AddTensorFromHandle(graph_->graph(), VSI_NN_TENSOR_ID_AUTO,
+-- 
+2.25.1
+

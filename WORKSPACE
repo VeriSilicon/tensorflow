@@ -28,6 +28,8 @@ git_repository(
     name = "TIM_VX",
     remote = "https://github.com/VeriSilicon/TIM-VX.git",
     tag = "v1.1.37",
+    patches = ["//tensorflow/compiler/plugin/vsi/driver:0001-patch-for-TF-XLA.patch"],
+    patch_args = ["-p1"],
     verbose = True,
 )
 

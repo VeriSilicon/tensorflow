@@ -158,7 +158,7 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
                                     run_options->stream(), argument_buffers[p]));
             arg_literals.push_back(std::move(arg_literal));
         }
- 
+        LOG(INFO) << "computation->num_parameters: " << computation->num_parameters();
         auto tensor = visitor_->evaluate(*computation, arg_literals);
 
         // Transform the result literal back into a ShapedBuffer.
@@ -172,29 +172,32 @@ StatusOr<ExecutionOutput> VsiExecutable::ExecuteAsyncOnStream(
 
 
         if(!result_shape.IsTuple()){
-            for(auto& pair:result_buffers.buffers()){
+            for(auto& pair : result_buffers.buffers()){
                 const ShapeIndex& index = pair.first;
                 se::DeviceMemoryBase& memory_base = pair.second;
                 const Shape& subshape =
                     ShapeUtil::GetSubshape(result_buffers.on_device_shape(), index);
                 LOG(INFO) << "no-tuple  result buffer info " << subshape.ToString();
                 tensor[0]->CopyDataFromTensor(memory_base.opaque());
+                float* val = (float*)(memory_base.opaque());
+                LOG(INFO) << "memory_base.opaque: " << *val;
             }
         }else{
             int32_t count = 0;
             auto top_shape_memory = result_buffers.buffers();
 
             se::DeviceMemoryBase top_memory_base;
-            for(auto& pair:result_buffers.buffers()){
+            for(auto& pair : result_buffers.buffers()){
                 if(count == 0){
                     top_memory_base = pair.second;
                     LOG(INFO) << "top_memory_base location is " << top_memory_base.opaque();
-                    count++;
+                    // count++;
+                    break;
                 }
             }
 
             count = -1;
-            for(auto& pair:result_buffers.buffers()){
+            for(auto& pair : result_buffers.buffers()){
                 count++;
                 if(count == 0) continue;
                 const ShapeIndex& index = pair.first;
