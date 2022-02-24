@@ -2,13 +2,20 @@ import os
 input("pid: " + str(os.getpid()) +", press enter after attached")
 import numpy as np
 import tensorflow as tf
-#input("pid: " + str(os.getpid()) +", press enter after set breakpoints")
+print("tf verison: " + tf.__version__)
+# input("pid: " + str(os.getpid()) +", press enter after set breakpoints")
 tf.keras.backend.clear_session()
 tf.config.optimizer.set_jit(True) # Start with XLA disabled.
 tf.debugging.set_log_device_placement(True)
 
 MODEL_FILE = "resnet.json"
 MODEL_DATA_FILE = "resnet.h5"
+
+BATCH_SIZE = 2
+TRAIN_SIZE = BATCH_SIZE
+EPOCHS = 1
+DUMP_DIR = "npu"
+MODEL_NAME = "tiny_v1_for_full_size"
 
 def load_cifar_data():
   (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
@@ -21,27 +28,17 @@ def load_cifar_data():
   return ((x_train, y_train), (x_test, y_test))
 
 # fake data
-def load_fake_data():
+def load_fake_data(train_size, test_size, height, width, channel, num_classes):
   rng = np.random.default_rng(12345)
-  BATCH = 1
-  x_train = rng.random((BATCH, 224, 224, 3))
-  x_test = rng.random((BATCH, 224, 224, 3))
+  x_train = rng.random((train_size, height, width, channel))
+  x_test = rng.random((test_size, height, width, channel))
 
-  y_train = rng.integers(low=0, high=1000, size=(BATCH,1))
-  y_test = rng.integers(low=0, high=1000, size=(BATCH,1))
+  y_train = rng.integers(low=0, high=1000, size=(train_size,1))
+  y_test = rng.integers(low=0, high=1000, size=(test_size,1))
   # Convert class vectors to binary class matrices.
-  y_train = tf.keras.utils.to_categorical(y_train, num_classes=1000)
-  y_test = tf.keras.utils.to_categorical(y_test, num_classes=1000)
+  y_train = tf.keras.utils.to_categorical(y_train, num_classes=num_classes)
+  y_test = tf.keras.utils.to_categorical(y_test, num_classes=num_classes)
   return ((x_train, y_train), (x_test, y_test))
-
-(x_train, y_train), (x_test, y_test) = load_fake_data()
-
-x_train = x_train[0:1,:,:,:]
-y_train = y_train[0:1,:]
-
-x_test = x_test[0:1,:,:,:]
-y_test = y_test[0:1,:]
-
 
 def Conv_BN_Relu(filters, kernel_size, strides, input_layer):
   x = tf.keras.layers.Conv2D(
@@ -49,7 +46,6 @@ def Conv_BN_Relu(filters, kernel_size, strides, input_layer):
   x = tf.keras.layers.BatchNormalization()(x)
   x = tf.keras.layers.Activation('relu')(x)
   return x
-
 
 def resiidual_a_or_b(input_x, filters, flag):
   if flag == 'a':
@@ -89,7 +85,7 @@ def generate_v1_model():
   x = tf.keras.layers.GlobalAveragePooling2D()(x)
   x = tf.keras.layers.Flatten()(x)
   x = tf.keras.layers.Dense(1000)(x)
-  x = tf.keras.layers.Dropout(0.5)(x)
+  # x = tf.keras.layers.Dropout(0.5)(x)
   y = tf.keras.layers.Softmax(axis=-1)(x)
   model = tf.keras.models.Model([input_layer], [y])
   return model
@@ -116,6 +112,33 @@ def generate_cifar_model():
   model = tf.keras.models.Model([input_layer], [y])
   return model
 
+def generate_tiny_model():
+  input_layer = tf.keras.layers.Input((224, 224, 3))
+  conv1 = Conv_BN_Relu(64, (3, 3), 1, input_layer)
+  x = resiidual_a_or_b(conv1, 64, 'b')
+  x = resiidual_a_or_b(x, 64, 'a')
+
+  x = tf.keras.layers.GlobalAveragePooling2D()(x)
+  x = tf.keras.layers.Flatten()(x)
+  x = tf.keras.layers.Dense(1000)(x)
+  y = tf.keras.layers.Softmax(axis=-1)(x)
+  model = tf.keras.models.Model([input_layer], [y])
+  return model
+
+# modify for cifar dataset
+def generate_tiny_cifar_model():
+  input_layer = tf.keras.layers.Input((32, 32, 3))
+  conv1 = Conv_BN_Relu(64, (3, 3), 1, input_layer)
+  x = resiidual_a_or_b(conv1, 64, 'b')
+  x = resiidual_a_or_b(x, 64, 'a')
+
+  x = tf.keras.layers.GlobalAveragePooling2D()(x)
+  x = tf.keras.layers.Flatten()(x)
+  x = tf.keras.layers.Dense(10)(x)
+  y = tf.keras.layers.Softmax(axis=-1)(x)
+  model = tf.keras.models.Model([input_layer], [y])
+  return model
+
 def generate_v2_model():
   model = tf.keras.applications.ResNet50V2()
   return model
@@ -129,9 +152,10 @@ def compile_model(model):
                 metrics=['accuracy'])
   return model
 
-def train_model(model, x_train, y_train, x_test, y_test, epochs=1):
-  model.fit(x_train, y_train, batch_size=1, epochs=epochs,
-    validation_data=(x_test, y_test), shuffle=True)
+def train_model(model, x_train, y_train, x_test,
+  y_test, epochs=1, batch_size=1):
+  model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs,
+    validation_data=(x_test, y_test), shuffle=False)
 
 def warmup(model, x_train, y_train, x_test, y_test):
   # Warm up the JIT, we do not wish to measure the compilation time.
@@ -139,16 +163,53 @@ def warmup(model, x_train, y_train, x_test, y_test):
   train_model(model, x_train, y_train, x_test, y_test, epochs=1)
   model.set_weights(initial_weights)
 
+def get_model(model_list, model_name):
+  for model in model_list:
+    if (model['name'] == model_name):
+      return model
+
+model_list = [
+    {'name': "offical_v2",
+     'model': 'generate_v2_model()',
+     'data_set': 'load_fake_data(TRAIN_SIZE, 1, 224, 224, 3, 1000)',
+    },
+    {'name': "unoffical_v1",
+     'model': 'generate_v1_model()',
+     'data_set': 'load_fake_data(TRAIN_SIZE, 1, 224, 224, 3, 1000)',
+    },
+    {'name': "unoffical_v1_for_cifar",
+     'model': 'generate_cifar_model()',
+     'data_set': 'load_cifar_data()',
+    },
+    {'name': "tiny_v1_for_cifar",
+     'model': 'generate_tiny_cifar_model()',
+     'data_set': 'load_cifar_data()',
+    },
+    {'name': "tiny_v1_for_full_size",
+     'model': 'generate_tiny_model()',
+     'data_set': 'load_fake_data(TRAIN_SIZE, 1, 224, 224, 3, 1000)',
+    },
+]
+
+model_info = get_model(model_list, MODEL_NAME)
+print (model_info)
+
+(x_train, y_train), (x_test, y_test) = eval(model_info['data_set'])
+
+x_train = x_train[0:TRAIN_SIZE, :, :, :]
+y_train = y_train[0:TRAIN_SIZE, :]
+
+x_test = x_test[0:1,:,:,:]
+y_test = y_test[0:1,:]
+
 if os.path.exists(MODEL_FILE):
   json_string = open(MODEL_FILE, 'r').read() 
   model = tf.keras.models.model_from_json(json_string)
   model.load_weights(MODEL_DATA_FILE)
 else:
-  model = generate_v2_model()
+  model = eval(model_info['model'])
 
 model = compile_model(model)
-
-DUMP_DIR = "2"
 
 def dump_tensors(tensors, prefix, tensors_name=None):
   if not os.path.isdir(DUMP_DIR): os.makedirs(DUMP_DIR)
@@ -180,7 +241,8 @@ def get_weight_grad(model, inputs, outputs):
   return grad
 
 #warmup(model, x_train, y_train, x_test, y_test)
-train_model(model, x_train, y_train, x_test, y_test, epochs=1)
+train_model(model, x_train, y_train, x_test, y_test,
+  epochs=EPOCHS, batch_size=BATCH_SIZE)
 model.summary()
 
 weight_grads = get_weight_grad(model, x_train, y_train)
@@ -200,5 +262,7 @@ model.save_weights(DUMP_DIR + "/after/" + MODEL_DATA_FILE)
 # functor = tf.keras.backend.function([model.input], outputs)
 # layer_outs = functor([x_train])
 # dump_tensors(layer_outs, "output", outputs)
+
+# print(model.predict(x_test))
 
 print("RRR : job finish.")
