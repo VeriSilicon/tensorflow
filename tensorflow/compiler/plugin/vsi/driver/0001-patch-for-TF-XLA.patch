@@ -1,12 +1,81 @@
-From 5d3f05b4aadf3706447ebd53509c3902e62c3579 Mon Sep 17 00:00:00 2001
-From: Jing Tang <jing.tang@verisilicon.com>
-Date: Tue, 22 Feb 2022 14:17:00 +0800
+From 37eb86010d0e023ef874ca415d9aaea53d806e4d Mon Sep 17 00:00:00 2001
+From: Tang <jing.tang@verisilicon.com>
+Date: Wed, 16 Mar 2022 14:27:49 +0800
 Subject: [PATCH] patch for TF XLA
 
 ---
- src/tim/vx/tensor.cc | 15 +++++++++------
- 1 file changed, 9 insertions(+), 6 deletions(-)
+ prebuilt-sdk/BUILD                            | 35 +------------------
+ .../vx/internal/src/ops/vsi_nn_op_conv2d.c    |  8 ++---
+ src/tim/vx/tensor.cc                          | 15 ++++----
+ 3 files changed, 14 insertions(+), 44 deletions(-)
 
+diff --git a/prebuilt-sdk/BUILD b/prebuilt-sdk/BUILD
+index 6b70ced..afd0974 100644
+--- a/prebuilt-sdk/BUILD
++++ b/prebuilt-sdk/BUILD
+@@ -1,42 +1,9 @@
+ package(default_visibility = ["//visibility:public"])
+ 
+-config_setting(
+-    name = "x86_64_linux",
+-    values = {"define": "target_device=x86_64_linux"},
+-)
+-
+-config_setting(
+-    name = "aarch64_A311D",
+-    values = {"define": "target_device=aarch64_A311D"},
+-)
+-
+-config_setting(
+-    name = "aarch64_S905D3",
+-    values = {"define": "target_device=aarch64_S905D3"},
+-)
+-
+-config_setting(
+-    name = "external_viv_sdk",
+-    values = {"define": "use_external_viv_sdk=true"},
+-)
+-
+ cc_library(
+     name = "VIV_SDK_LIB",
+     deps = select({
+-        "external_viv_sdk": ["@external_viv_sdk//:VIV_SDK_LIB"],
+-        "aarch64_A311D": ["@aarch64_A311D//:VIV_SDK_LIB"],
+-        "aarch64_S905D3": ["@aarch64_S905D3//:VIV_SDK_LIB"],
++        "@bazel_tools//src/conditions:linux_aarch64": ["//prebuilt-sdk/aarch64:VIV_SDK_LIB"],
+         "//conditions:default": ["//prebuilt-sdk/x86_64_linux:VIV_SDK_LIB"],
+     }),
+ )
+-config_setting(
+-    name = "VIPLite_aarch64_A311D",
+-    values = {"define": "target_device=VIPLite_aarch64_A311D"},
+-)
+-
+-cc_library(
+-    name = "VIP_LITE_LIB",
+-    deps = select({
+-        "VIPLite_aarch64_A311D": ["@VIPLite_aarch64_A311D//:VIP_LITE_LIB"],
+-    }),
+-)
+diff --git a/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c b/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c
+index 8c216ea..215423a 100644
+--- a/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c
++++ b/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c
+@@ -305,10 +305,10 @@ static vsi_bool op_check
+         }
+ 
+         /* check parameters */
+-        if(inputs[1]->attr.size[0] * inputs[1]->attr.size[1] > 6400) {
+-            VSILOGE("Kernel size should <= 6400.");
+-            return FALSE;
+-        }
++        // if(inputs[1]->attr.size[0] * inputs[1]->attr.size[1] > 6400) {
++        //     VSILOGE("Kernel size should <= 6400.");
++        //     return FALSE;
++        // }
+     }
+ 
+     return ret;
 diff --git a/src/tim/vx/tensor.cc b/src/tim/vx/tensor.cc
 index 5979b43..492f80d 100644
 --- a/src/tim/vx/tensor.cc
