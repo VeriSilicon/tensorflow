@@ -48,8 +48,7 @@ class BaseVisitor : public DfsHloVisitor {
         int64 index,tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
         tim::vx::ShapeType timShape;
         tim::vx::Quantization timQuant;
-        std::cout<<"shape info ";
-
+        std::cout << "shape info 0: ";
 
         auto output_shape = shape.tuple_shapes(index);
 
@@ -61,10 +60,10 @@ class BaseVisitor : public DfsHloVisitor {
         if(timShape.size() == 0){
           timShape.push_back(1);
         }
-        for(uint32_t i=0;i<timShape.size();i++){
-          std::cout<<timShape[i]<<" ";
+        for (uint32_t i = 0; i < timShape.size(); i++) {
+          std::cout << timShape[i] << " ";
         }
-        std::cout<<std::endl;
+        std::cout << std::endl;
         auto type = convertTfPrimitiveTypeToTim(output_shape.element_type());
         std::unique_lock<std::mutex> lock(mutex_);
         tim::vx::TensorSpec timSpec(type, timShape,
@@ -76,7 +75,7 @@ class BaseVisitor : public DfsHloVisitor {
         tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
         tim::vx::ShapeType timShape;
         tim::vx::Quantization timQuant;
-        std::cout<<"shape info ";
+        std::cout<<"shape info 1: ";
         if(shape.is_static() && shape.has_layout()){
             for( auto d : shape.layout().minor_to_major())
               timShape.push_back(shape.dimensions(d));
@@ -85,10 +84,10 @@ class BaseVisitor : public DfsHloVisitor {
         if(timShape.size() == 0){
           timShape.push_back(1);
         }
-        for(uint32_t i=0;i<timShape.size();i++){
-          std::cout<<timShape[i]<<" ";
+        for (uint32_t i = 0; i < timShape.size(); i++) {
+          std::cout << timShape[i] << " ";
         }
-        std::cout<<std::endl;
+        std::cout << std::endl;
         auto type = convertTfPrimitiveTypeToTim(shape.element_type());
         std::unique_lock<std::mutex> lock(mutex_);
         tim::vx::TensorSpec timSpec(type, timShape,
@@ -103,14 +102,14 @@ class BaseVisitor : public DfsHloVisitor {
         tim::vx::Quantization timQuant;
         for( auto d : shape)
           timShape.push_back(d);
-        std::cout<<"shape info ";
+        std::cout << "shape info 2: ";
         if(timShape.size() == 0){
           timShape.push_back(1);
         }
-        for(uint32_t i=0;i<timShape.size();i++){
-          std::cout<<timShape[i]<<" ";
+        for (uint32_t i = 0; i < timShape.size(); i++) {
+          std::cout << timShape[i] << " ";
         }
-        std::cout<<std::endl;
+        std::cout << std::endl;
 
         std::unique_lock<std::mutex> lock(mutex_);
         tim::vx::TensorSpec timSpec(dataType, timShape,

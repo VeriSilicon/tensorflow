@@ -112,7 +112,7 @@ static bool OpFilter(KernelDef* kdef) {
   // if (kdef->op() == "RealDiv") return true;
   if (kdef->op() == "VarIsInitializedOp") return true;
   if (kdef->op() == "NoOp") return true;
-  // if (kdef->op() == "MatMul") return true;
+  if (kdef->op() == "MatMul") return true;
   if (kdef->op() == "Conv2D") return true;
   if (kdef->op() == "Conv2DBackpropInput") return true;
   if (kdef->op() == "Conv2DBackpropFilter") return true;

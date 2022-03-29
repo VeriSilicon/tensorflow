@@ -3590,6 +3590,7 @@ template <typename Visitor>
 static Status PostOrderDFS(HloInstruction* root, Visitor* visitor,
                            const InternalCompareFunction* operand_order,
                            bool ignore_control_predecessors) {
+  LOG(INFO) << "PostOrderDFS 0";
   visitor->ReserveVisitStates(root->parent()->instruction_count());
 
   // dfs_stack holds pairs of <HloInstruction*->unique_id(), HloInstruction*>.
@@ -3612,7 +3613,7 @@ static Status PostOrderDFS(HloInstruction* root, Visitor* visitor,
         visitor->GetVisitState(current_id);
     if (visit_state == Visitor::kVisited) {
       dfs_stack.pop_back();
-      VLOG(3) << "Not visiting HLO (id = " << current_id
+      LOG(INFO) << "Not visiting HLO (id = " << current_id
               << ") as it was already visited.";
       continue;
     }
@@ -3621,7 +3622,7 @@ static Status PostOrderDFS(HloInstruction* root, Visitor* visitor,
       dfs_stack.pop_back();
 
       TF_RETURN_IF_ERROR(visitor->Preprocess(current_node));
-      VLOG(2) << "Visiting HLO %" << current_node->name();
+      LOG(INFO) << "Visiting HLO %" << current_node->name();
       TF_RETURN_IF_ERROR(current_node->Visit(visitor));
       visitor->SetVisitState(current_id, Visitor::kVisited);
       TF_RETURN_IF_ERROR(visitor->Postprocess(current_node));
@@ -3668,7 +3669,7 @@ template <typename HloInstructionPtr>
 Status HloInstruction::Accept(DfsHloVisitorBase<HloInstructionPtr>* visitor,
                               bool call_finish_visit,
                               bool ignore_control_predecessors) {
-  VLOG(3) << "HloInstruction::Accept(%" << name() << ")";
+  LOG(INFO) << "HloInstruction::Accept(%" << name() << ")";
   TF_RETURN_IF_ERROR(
       PostOrderDFS(this, visitor, nullptr, ignore_control_predecessors));
   if (call_finish_visit) {

@@ -69,6 +69,7 @@ std::vector<std::shared_ptr<tim::vx::Tensor>> BaseVisitor::evaluate(
     if (is_build_ && !arg_literals_.empty()){
         // input_tensors include not only mutable parameters(arg_literals_) but also 
         // const parameters.
+        LOG(INFO) << "BaseVisitor::evaluate 0";
         CHECK_LE(arg_literals_.size(), input_tensors.size());
 
         for (uint32_t i = 0; i < arg_literals_.size(); i++){
@@ -86,6 +87,7 @@ std::vector<std::shared_ptr<tim::vx::Tensor>> BaseVisitor::evaluate(
             }
         }
     }else{
+        LOG(INFO) << "BaseVisitor::evaluate 1";
         computation.Accept(this);
     }
     graph_->PrintGraph();
@@ -868,15 +870,93 @@ Status BaseVisitor::HandleIota(HloInstruction* hlo){
 Status BaseVisitor::HandleDot(HloInstruction* hlo){
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     auto shape = hlo->shape();
-    const HloInstruction* lhs = hlo->operand(1);
-    const HloInstruction* rhs = hlo->operand(0);
+    auto* dot_hlo = Cast<HloDotInstruction>(hlo);
+    auto dim_nums = dot_hlo->dot_dimension_numbers();
+    const HloInstruction* lhs = hlo->operand(0);
+    const HloInstruction* rhs = hlo->operand(1);
 
     auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
     auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
     auto out_tensor =
           createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
-    auto matmul = graph_->CreateOperation<tim::vx::ops::Matmul>(true,true,false,false);
+    {
+        std::ostringstream ss;
+        const Shape& lhs_shape = lhs->shape();
+        auto dims = lhs_shape.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " lhs_shape shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        const Shape& rhs_shape = rhs->shape();
+        auto dims = rhs_shape.dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " rhs_shape shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dim_nums.lhs_contracting_dimensions_size(); i++) {
+            ss << dim_nums.lhs_contracting_dimensions(i) << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " dot_dimension_numbers lhs_contracting_dimensions: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dim_nums.rhs_contracting_dimensions_size(); i++) {
+            ss << dim_nums.rhs_contracting_dimensions(i) << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " dot_dimension_numbers rhs_contracting_dimensions: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dim_nums.lhs_batch_dimensions_size(); i++) {
+            ss << dim_nums.lhs_batch_dimensions(i) << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " dot_dimension_numbers lhs_batch_dimensions: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dim_nums.rhs_batch_dimensions_size(); i++) {
+            ss << dim_nums.rhs_batch_dimensions(i) << " ";
+        }
+        LOG(INFO) << __FUNCTION__ << " dot_dimension_numbers rhs_batch_dimensions: " << ss.str();
+    }
+
+    if (dim_nums.lhs_contracting_dimensions_size() != 1 ||
+        dim_nums.rhs_contracting_dimensions_size() != 1 ||
+        dim_nums.lhs_batch_dimensions_size() != 0 ||
+        dim_nums.rhs_batch_dimensions_size() != 0) {
+        return tensorflow::errors::Unimplemented(
+            "Only support lhs_contracting_dimensions_size==1 && rhs_contracting_dimensions_size==1"
+            " && lhs_batch_dimensions_size==0 && rhs_batch_dimensions_size==0");
+    }
+
+    bool transpose_a, transpose_b;
+    if (dim_nums.lhs_contracting_dimensions(0) == 1) {
+        transpose_a = false;
+    } else {
+        transpose_a = true;
+    }
+
+    if (dim_nums.rhs_contracting_dimensions(0) == 1) {
+        transpose_b = true;
+    } else {
+        transpose_b = false;
+    }
+    LOG(INFO) << __FUNCTION__ << " transpose_a: " << transpose_a;
+    LOG(INFO) << __FUNCTION__ << " transpose_b: " << transpose_b;
+
+    auto matmul = graph_->CreateOperation<tim::vx::ops::Matmul>(transpose_a, transpose_b, false, false);
     (*matmul).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
@@ -1048,10 +1128,6 @@ Status BaseVisitor::HandleConvolution(HloInstruction* conv) {
         << " " << dnums.output_batch_dimension();
 
     std::vector<uint32_t> perm;
-    auto dims0 = lhs_shape.dimensions();
-    auto dims1 = rhs_shape.dimensions();
-    auto dims2 = result_shape.dimensions();
-
 
     auto out_tensor = createTensorFromShape(conv->shape(), tim::vx::TensorAttribute::OUTPUT);
     auto out_tensor_spec = out_tensor->GetSpec();

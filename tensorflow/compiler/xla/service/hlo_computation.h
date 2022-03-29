@@ -623,11 +623,12 @@ Status HloComputation::Accept(
   // visited root, which would invalidate iterators if the unreachable roots
   // weren't computed ahead of time.
   for (HloInstruction* root : CollectUnreachableRoots()) {
-    VLOG(3) << "Traversing unreachable root: " << root->ToString();
+    LOG(INFO) << "Traversing unreachable root: " << root->ToString();
     // Call FinishVisit only at the end.
     TF_RETURN_IF_ERROR(root->Accept(visitor, /*call_finish_visit=*/false));
   }
   // Visit the computation root instruction last.
+  LOG(INFO) << "HloComputation::Accept 0";
   return root_instruction()->Accept(visitor, /*call_finish_visit=*/true);
 }
 
