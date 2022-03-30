@@ -118,7 +118,7 @@ class BaseVisitor : public DfsHloVisitor {
     }
 
   static tim::vx::DataType convertTfPrimitiveTypeToTim(xla::PrimitiveType xlaType){
-    LOG(INFO) << "convertTfPrimitiveTypeToTim: xlaType: " << xlaType <<std::endl;
+    LOG(INFO) << "convertTfPrimitiveTypeToTim: xlaType: " << xlaType;
       switch(xlaType){
         case PRED:{
           return tim::vx::DataType::BOOL8;
@@ -211,6 +211,12 @@ class BaseVisitor : public DfsHloVisitor {
   virtual Status FinishScopedVisit(HloInstruction* root) {
     return Status::OK();
   }
+
+  template <typename T>
+  Status HandleSimpleElementwiseBinary(HloInstruction* hlo);
+
+  template <typename T>
+  Status HandleSimpleElementwiseUnary(HloInstruction* hlo);
 
   Status HandleElementwiseBinary(HloInstruction* hlo) override;
 

@@ -121,6 +121,9 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "ReadVariableOp") return true;
   if (kdef->op() == "AssignAddVariableOp") return true;
 
+  if (kdef->op() == "Relu") return true;
+  if (kdef->op() == "ReluGrad") return true;
+
   // if (kdef->op() == "Angle") return false;
   // if (kdef->op() == "Complex") return false;
   // if (kdef->op() == "ComplexAbs") return false;

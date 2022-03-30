@@ -164,96 +164,74 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
     return input_tensor;
 }
 
+template <typename T>
+Status BaseVisitor::HandleSimpleElementwiseUnary(HloInstruction* hlo) {
+    auto shape = hlo->shape();
+    const HloInstruction* input = hlo->operand(0);
+    TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
+    auto inout_tensor = GetEvaluatedTensorFor(input)[0];
+    auto out_tensor =
+        createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+
+    auto op = graph_->CreateOperation<T>();
+    (*op).BindInput(inout_tensor).BindOutput(out_tensor);
+
+    kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    return Status::OK();
+}
+
 Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
     switch (hlo->opcode()){
         case HloOpcode::kNegate:{
             LOG(INFO) << "PROCESS kNegate";
-            auto shape = hlo->shape();
-            const HloInstruction* input = hlo->operand(0);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-            auto neg = graph_->CreateOperation<tim::vx::ops::Neg>();
-            (*neg).BindInput(inout_tensor).BindOutput(out_tensor);
-
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseUnary<tim::vx::ops::Neg>(hlo);
             break;
         }
         case HloOpcode::kExp:{
             LOG(INFO) << "PROCESS kExp";
-            auto shape = hlo->shape();
-            const HloInstruction* input = hlo->operand(0);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-            auto exp = graph_->CreateOperation<tim::vx::ops::Exp>();
-            (*exp).BindInput(inout_tensor).BindOutput(out_tensor);
-
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
-            break;
-        }
-        case HloOpcode::kLog1p:{
-            LOG(INFO) << "PROCESS kLog1p";
-            auto shape = hlo->shape();
-            const HloInstruction* input = hlo->operand(0);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-            auto log1p = graph_->CreateOperation<tim::vx::ops::Log>();
-            (*log1p).BindInput(inout_tensor).BindOutput(out_tensor);
-
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseUnary<tim::vx::ops::Exp>(hlo);
             break;
         }
         case HloOpcode::kLog:{
             LOG(INFO) << "PROCESS kLog";
-            auto shape = hlo->shape();
-            const HloInstruction* input = hlo->operand(0);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-            auto log1p = graph_->CreateOperation<tim::vx::ops::Log>();
-            (*log1p).BindInput(inout_tensor).BindOutput(out_tensor);
-
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseUnary<tim::vx::ops::Log>(hlo);
             break;
         }
         case HloOpcode::kNot:{
             LOG(INFO) << "PROCESS kNot";
-            auto shape = hlo->shape();
-            const HloInstruction* input = hlo->operand(0);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-            auto logical_not = graph_->CreateOperation<tim::vx::ops::LogicalNot>();
-            (*logical_not).BindInput(inout_tensor).BindOutput(out_tensor);
-
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseUnary<tim::vx::ops::LogicalNot>(hlo);
             break;
         }
         case HloOpcode::kSqrt:{
             LOG(INFO) << "PROCESS kSqrt";
-            auto shape = hlo->shape();
-            const HloInstruction* input = hlo->operand(0);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-            auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-            auto sqrt = graph_->CreateOperation<tim::vx::ops::Sqrt>();
-            (*sqrt).BindInput(inout_tensor).BindOutput(out_tensor);
-
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseUnary<tim::vx::ops::Sqrt>(hlo);
             break;
         }
         default:
-            LOG(INFO) << "not has been implement; opcode:" << hlo->opcode();
-            break;
+            LOG(INFO) << "has not been implement; opcode:" << hlo->opcode();
+            return tensorflow::errors::Unimplemented(
+                "some HandleElementwiseUnary op has not been implement");
     }
+    return Status::OK();
+}
+
+template <typename T>
+Status BaseVisitor::HandleSimpleElementwiseBinary(HloInstruction* hlo) {
+    auto shape = hlo->shape();
+    const HloInstruction* lhs = hlo->operand(0);
+    const HloInstruction* rhs = hlo->operand(1);
+    TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
+    TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+
+    auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
+    auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
+    auto out_tensor =
+        createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    auto op = graph_->CreateOperation<T>();
+    (*op).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+
+    // evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
+    kVsiRunTensorContainer_[hlo].push_back(out_tensor);
     return Status::OK();
 }
 
@@ -262,39 +240,12 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
     {
         case HloOpcode::kAdd:{
             LOG(INFO) << "PROCESS Add";
-            auto shape = hlo->shape();
-            const HloInstruction* lhs = hlo->operand(0);
-            const HloInstruction* rhs = hlo->operand(1);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
-
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-            auto add = graph_->CreateOperation<tim::vx::ops::Add>();
-            (*add).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-
-            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
-            LOG(INFO) << "PROCESS Add End: " << graph_->InputsTensor().size();
+            HandleSimpleElementwiseBinary<tim::vx::ops::Add>(hlo);
             break;
         }
         case HloOpcode::kSubtract:{
             LOG(INFO) << "PROCESS Subtract";
-            auto shape = hlo->shape();
-            const HloInstruction* lhs = hlo->operand(0);
-            const HloInstruction* rhs = hlo->operand(1);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
-
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-            auto sub = graph_->CreateOperation<tim::vx::ops::Sub>();
-            (*sub).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-
-            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseBinary<tim::vx::ops::Sub>(hlo);
             break;
         }
         case HloOpcode::kMultiply:{
@@ -385,43 +336,18 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
         }
         case HloOpcode::kMaximum:{
             LOG(INFO) << "PROCESS Maximum";
-            auto shape = hlo->shape();
-            const HloInstruction* lhs = hlo->operand(0);
-            const HloInstruction* rhs = hlo->operand(1);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
-
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-            auto maximum = graph_->CreateOperation<tim::vx::ops::Maximum>();
-            (*maximum).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-
-            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseBinary<tim::vx::ops::Maximum>(hlo);
             break;
         }
         case HloOpcode::kMinimum:{
             LOG(INFO) << "PROCESS Maximum";
-            auto shape = hlo->shape();
-            const HloInstruction* lhs = hlo->operand(0);
-            const HloInstruction* rhs = hlo->operand(1);
-            TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-            TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
-
-            auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
-            auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-            auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-            auto minimum = graph_->CreateOperation<tim::vx::ops::Minimum>();
-            (*minimum).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-
-            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-            kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            HandleSimpleElementwiseBinary<tim::vx::ops::Minimum>(hlo);
             break;
         }
         default:
-            LOG(INFO) << "not has benn implement; opcode:" << hlo->opcode();
-            break;
+            LOG(INFO) << "has not been implement; opcode:" << hlo->opcode();
+            return tensorflow::errors::Unimplemented(
+                "some HandleElementwiseBinary op has not been implement");
     }
     return Status::OK();
 }
@@ -598,17 +524,59 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
 Status BaseVisitor::HandleCompare(HloInstruction* hlo) {
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     auto shape = hlo->shape();
+    auto* compare_hlo = Cast<HloCompareInstruction>(hlo);
     const HloInstruction* lhs = hlo->operand(0);
     const HloInstruction* rhs = hlo->operand(1);
     TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
     TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
 
+    LOG(INFO) << "HandleCompare direction: " << (int)(compare_hlo->direction());
+
     auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
     auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
     auto out_tensor =
       createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-    auto compare = graph_->CreateOperation<tim::vx::ops::Equal>();
-    (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+    switch (compare_hlo->direction())
+    {
+    case ComparisonDirection::kEq:
+        {
+            auto compare = graph_->CreateOperation<tim::vx::ops::Equal>();
+            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+        }
+        break;
+    case ComparisonDirection::kNe:
+        {
+            auto compare = graph_->CreateOperation<tim::vx::ops::NotEqual>();
+            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+        }
+        break;
+    case ComparisonDirection::kGe:
+        {
+            auto compare = graph_->CreateOperation<tim::vx::ops::GreaterOrEqual>();
+            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+        }
+        break;
+    case ComparisonDirection::kGt:
+        {
+            auto compare = graph_->CreateOperation<tim::vx::ops::Greater>();
+            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+        }
+        break;
+    case ComparisonDirection::kLe:
+        {
+            auto compare = graph_->CreateOperation<tim::vx::ops::LessOrEqual>();
+            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+        }
+        break;
+    case ComparisonDirection::kLt:
+        {
+            auto compare = graph_->CreateOperation<tim::vx::ops::Less>();
+            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+        }
+        break;
+    default:
+        return tensorflow::errors::Unimplemented("Unimplemented Compare Op");
+    }
 
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
     return Status::OK();
