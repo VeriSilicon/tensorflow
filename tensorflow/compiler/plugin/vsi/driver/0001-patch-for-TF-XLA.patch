@@ -1,14 +1,34 @@
-From 5d3f05b4aadf3706447ebd53509c3902e62c3579 Mon Sep 17 00:00:00 2001
-From: Jing Tang <jing.tang@verisilicon.com>
-Date: Tue, 22 Feb 2022 14:17:00 +0800
+From b0fc17065f3bb110ea1e46fbd99d6f14f9500635 Mon Sep 17 00:00:00 2001
+From: Tang <jing.tang@verisilicon.com>
+Date: Mon, 18 Apr 2022 16:28:19 +0800
 Subject: [PATCH] patch for TF XLA
 
 ---
- src/tim/vx/tensor.cc | 15 +++++++++------
- 1 file changed, 9 insertions(+), 6 deletions(-)
+ src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c |  8 ++++----
+ src/tim/vx/tensor.cc                           | 15 +++++++++------
+ 2 files changed, 13 insertions(+), 10 deletions(-)
 
+diff --git a/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c b/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c
+index 7dbe943..481b92c 100644
+--- a/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c
++++ b/src/tim/vx/internal/src/ops/vsi_nn_op_conv2d.c
+@@ -306,10 +306,10 @@ static vsi_bool op_check
+         }
+ 
+         /* check parameters */
+-        if(inputs[1]->attr.size[0] * inputs[1]->attr.size[1] > 6400) {
+-            VSILOGE("Kernel size should <= 6400.");
+-            return FALSE;
+-        }
++        // if(inputs[1]->attr.size[0] * inputs[1]->attr.size[1] > 6400) {
++        //     VSILOGE("Kernel size should <= 6400.");
++        //     return FALSE;
++        // }
+     }
+ 
+     return ret;
 diff --git a/src/tim/vx/tensor.cc b/src/tim/vx/tensor.cc
-index 5979b43..492f80d 100644
+index 884cbbb..06fe7cc 100644
 --- a/src/tim/vx/tensor.cc
 +++ b/src/tim/vx/tensor.cc
 @@ -173,7 +173,8 @@ bool TensorImpl::Init() {

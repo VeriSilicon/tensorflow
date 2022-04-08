@@ -105,10 +105,10 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "_Arg") return true;
   if (kdef->op() == "Add") return true;
   // if (kdef->op() == "AddV2") return true;
-  // if (kdef->op() == "Sub") return true;
+  if (kdef->op() == "Sub") return true;
   // if (kdef->op() == "Sqrt") return true;
   // if (kdef->op() == "Square") return true;
-  // if (kdef->op() == "Mul") return true;
+  if (kdef->op() == "Mul") return true;
   // if (kdef->op() == "RealDiv") return true;
   if (kdef->op() == "VarIsInitializedOp") return true;
   if (kdef->op() == "NoOp") return true;
@@ -123,6 +123,7 @@ static bool OpFilter(KernelDef* kdef) {
 
   if (kdef->op() == "Relu") return true;
   if (kdef->op() == "ReluGrad") return true;
+  if (kdef->op() == "BroadcastTo") return true;
 
   // if (kdef->op() == "Angle") return false;
   // if (kdef->op() == "Complex") return false;

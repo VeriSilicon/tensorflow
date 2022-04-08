@@ -36,19 +36,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/stream_executor/lib/initialize.h"
 #include "tim/vx/operation.h"
-#include "tim/vx/ops/conv2d.h"
-#include "tim/vx/ops/elementwise.h"
-#include "tim/vx/ops/reshape.h"
-#include "tim/vx/ops/reverse.h"
-#include "tim/vx/ops/transpose.h"
-#include "tim/vx/ops/stridedslice.h"
-#include "tim/vx/ops/concat.h"
-#include "tim/vx/ops/relational_operations.h"
-#include "tim/vx/ops/select.h"
-#include "tim/vx/ops/simple_operations.h"
-#include "tim/vx/ops/reduce.h"
-#include "tim/vx/ops/matmul.h"
-#include "tim/transform/layout_inference.h"
+#include "tim/vx/ops.h"
 using tensorflow::str_util::StartsWith;
 
 namespace xla {
@@ -379,15 +367,14 @@ Status BaseVisitor::HandleTuple(HloInstruction* hlo){
         const HloInstruction* input = hlo->operand(i);
         LOG(INFO) << "opcode : " << input->opcode();
         auto it = kVsiRunTensorContainer_.find(input);
-        auto shape = it->second[0]->GetSpec().shape_;
-        std::string s;
-        std::stringstream ss;
-        ss << "shape : ";
-        for(auto size:shape){
-            ss << size << " ";
+        {
+            std::ostringstream ss;
+            auto shape = it->second[0]->GetSpec().shape_;
+            for(auto size : shape){
+                ss << size << " ";
+            }
+            LOG(INFO) << __FUNCTION__ << " shape : " << ss.str();
         }
-        ss >> s;
-        LOG(INFO) << s;
         kVsiRunTensorContainer_[hlo].push_back(it->second[0]);
     }
 
@@ -606,9 +593,64 @@ Status BaseVisitor::HandleSelect(HloInstruction* hlo) {
 
 Status BaseVisitor::HandleBroadcast(HloInstruction* hlo){
     LOG(INFO) << "PROCESS " << __FUNCTION__;
+    auto* broadcast_hlo = Cast<HloBroadcastInstruction>(hlo);
     const HloInstruction* input = hlo->operand(0);
+
+    {
+        std::ostringstream ss;
+        auto dims = input->shape().dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << " HandleBroadcast input shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = hlo->shape().dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << " HandleBroadcast output shape: " << ss.str();
+    }
+
+    {
+        std::ostringstream ss;
+        auto dims = broadcast_hlo->dimensions();
+        for(int i = 0; i < dims.size(); i++) {
+            ss << dims[i] << " ";
+        }
+        LOG(INFO) << " HandleBroadcast dimensions 0: " << ss.str();
+    }
+
+#if 1
+    auto shape = hlo->shape();
+    auto in_tensor = GetEvaluatedTensorFor(input)[0];
+    auto out_tensor =
+        createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    std::vector<int32_t> out_shape = convert_array<std::vector<int32_t>>(shape.dimensions());
+    std::reverse(std::begin(out_shape), std::end(out_shape));
+    std::vector<int32_t> dimensions;
+    for (const auto& e : broadcast_hlo->dimensions()) {
+        int32_t v = shape.dimensions().size() - 1 - e;
+        dimensions.push_back(v);
+    }
+    {
+        std::ostringstream ss;
+        for(int i = 0; i < dimensions.size(); i++) {
+            ss << dimensions[i] << " ";
+        }
+        LOG(INFO) << " HandleBroadcast dimensions 1: " << ss.str();
+    }
+    auto op =
+        graph_->CreateOperation<tim::vx::ops::Broadcast>(out_shape, dimensions);
+    (*op).BindInput(in_tensor).BindOutput(out_tensor);
+    kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+#else
     auto it = kVsiRunTensorContainer_.find(input);
-    kVsiRunTensorContainer_[hlo] = it->second;
+    kVsiRunTensorContainer_[hlo] = it->second; 
+#endif
+
     return Status::OK();
 }
 
@@ -726,9 +768,7 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
         LOG(INFO) << __FUNCTION__ << " hlo->dimensions: " << ss.str();
     }
 
-    for (int i = 0; i < hlo->dimensions().size(); i++){
-        tmpdims.push_back(hlo->dimensions(i));
-    }
+    tmpdims = convert_array<std::vector<uint32_t>>(hlo->dimensions());
 
     {
         std::ostringstream ss;
@@ -784,10 +824,7 @@ Status BaseVisitor::HandleReshape(HloInstruction* hlo){
     auto in_tensor = GetEvaluatedTensorFor(input)[0];
     auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
-    std::vector<uint32_t> dims;
-    for(auto d: shape.dimensions()){
-        dims.push_back(d);
-    }
+    std::vector<uint32_t> dims = convert_array<std::vector<uint32_t>>(shape.dimensions());
     auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
     (*reshapeOp).BindInput(in_tensor).BindOutput(out_tensor);
 
