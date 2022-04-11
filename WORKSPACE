@@ -37,3 +37,9 @@ git_repository(
 #     name = "TIM_VX",
 #     path = "tensorflow/compiler/plugin/vsi/driver/TIM-VX",
 # )
+
+new_local_repository(
+    name = 'toolchain-arm-imx865',
+    path = '/lhome/tangjing/toolchain/fsl-imx-5.10-rc4/sysroots',
+    build_file = 'cross_compiler/toolchain-arm-imx865.BUILD'
+)
