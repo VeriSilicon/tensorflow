@@ -172,32 +172,23 @@ Status BaseVisitor::HandleSimpleElementwiseUnary(HloInstruction* hlo) {
 }
 
 Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
+    LOG(INFO) << "PROCESS " << __FUNCTION__ << " : " << HloOpcodeString(hlo->opcode());
     switch (hlo->opcode()){
-        case HloOpcode::kNegate:{
-            LOG(INFO) << "PROCESS kNegate";
+        case HloOpcode::kNegate:
             HandleSimpleElementwiseUnary<tim::vx::ops::Neg>(hlo);
             break;
-        }
-        case HloOpcode::kExp:{
-            LOG(INFO) << "PROCESS kExp";
+        case HloOpcode::kExp:
             HandleSimpleElementwiseUnary<tim::vx::ops::Exp>(hlo);
             break;
-        }
-        case HloOpcode::kLog:{
-            LOG(INFO) << "PROCESS kLog";
+        case HloOpcode::kLog:
             HandleSimpleElementwiseUnary<tim::vx::ops::Log>(hlo);
             break;
-        }
-        case HloOpcode::kNot:{
-            LOG(INFO) << "PROCESS kNot";
+        case HloOpcode::kNot:
             HandleSimpleElementwiseUnary<tim::vx::ops::LogicalNot>(hlo);
             break;
-        }
-        case HloOpcode::kSqrt:{
-            LOG(INFO) << "PROCESS kSqrt";
+        case HloOpcode::kSqrt:
             HandleSimpleElementwiseUnary<tim::vx::ops::Sqrt>(hlo);
             break;
-        }
         default:
             LOG(INFO) << "has not been implement; opcode:" << HloOpcodeString(hlo->opcode());
             return tensorflow::errors::Unimplemented(
@@ -221,7 +212,6 @@ Status BaseVisitor::HandleSimpleElementwiseBinary(HloInstruction* hlo) {
     auto op = graph_->CreateOperation<T>();
     (*op).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-    // evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
     return Status::OK();
 }
@@ -270,7 +260,6 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
                   .BindInput(rhs_tensor)
                   .BindOutput(out_tensor);
 
-              // evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
               kVsiRunTensorContainer_[hlo].push_back(out_tensor);
               break;
             }
@@ -281,7 +270,6 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             auto mul = graph_->CreateOperation<tim::vx::ops::Multiply>();
             (*mul).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-            //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
             kVsiRunTensorContainer_[hlo].push_back(out_tensor);
             break;
         }
@@ -435,7 +423,6 @@ Status BaseVisitor::HandleCopy(HloInstruction* hlo){
     auto convert = graph_->CreateOperation<tim::vx::ops::DataConvert>();
     (*convert).BindInput(in_tensor[0]).BindOutput(out_tensor);
 
-    //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
 #else
     kVsiRunTensorContainer_[hlo].push_back(it->second[0]);
@@ -699,25 +686,30 @@ Status BaseVisitor::HandleBroadcast(HloInstruction* hlo){
 }
 
 Status BaseVisitor::HandleConcatenate(HloInstruction* hlo) {
-  LOG(INFO) << "PROCESS " << __FUNCTION__;
-  auto shape = hlo->shape();
-  const HloInstruction* lhs = hlo->operand(0);
-  const HloInstruction* rhs = hlo->operand(1);
-  //   TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-  //   TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+    LOG(INFO) << "PROCESS " << __FUNCTION__;
+    auto shape = hlo->shape();
+    auto* concat_hlo = Cast<HloConcatenateInstruction>(hlo);
+    LOG(INFO) << "HandleConcatenate operand_count: " << hlo->operand_count();
+    LOG(INFO) << "HandleConcatenate concatenate_dimension: " << concat_hlo->concatenate_dimension();
 
-  auto dims = hlo->dimensions();
+    if (hlo->operand_count() == 1) {
+        auto it = kVsiRunTensorContainer_.find(hlo->operand(0));
+        kVsiRunTensorContainer_[hlo] = it->second; 
+    } else {
+        uint32_t axis = concat_hlo->concatenate_dimension();
+        auto concat = graph_->CreateOperation<tim::vx::ops::Concat>(axis, hlo->operand_count());
+        for(int i = 0; i < hlo->operand_count(); i++) {
+            const HloInstruction* input = hlo->operand(i);
+            auto input_tensor = GetEvaluatedTensorFor(input)[0];
+            (*concat).BindInput(input_tensor);
+        }
+        auto out_tensor =
+            createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+        (*concat).BindOutput(out_tensor);
+        kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    }
 
-  //std::cout<<std::endl;
-  auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
-  auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-  auto concat = graph_->CreateOperation<tim::vx::ops::Concat>(dims[0],2);
-  (*concat).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
-  return Status::OK();
+    return Status::OK();
 }
 
 Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
@@ -755,7 +747,6 @@ Status BaseVisitor::HandleTranspose(HloInstruction* transpose){
     auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(dims);
     transposeOp->BindInput(in_tensor).BindOutput(out_tensor);
 
-    //evaluatedDevMem_[transpose] = executor_->setTensor(out_tensor);
     kVsiRunTensorContainer_[transpose].push_back(out_tensor);
     return Status::OK();
 }
@@ -856,7 +847,6 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo){
     auto reverseOp = graph_->CreateOperation<tim::vx::ops::Reverse>(dims);
     reverseOp->BindInput(in_tensor).BindOutput(out_tensor);
 
-    //evaluatedDevMem_[transpose] = executor_->setTensor(out_tensor);
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
     return Status::OK();
 }
@@ -872,7 +862,6 @@ Status BaseVisitor::HandleReshape(HloInstruction* hlo){
     auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
     (*reshapeOp).BindInput(in_tensor).BindOutput(out_tensor);
 
-    //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
     return Status::OK();
 }
@@ -880,7 +869,6 @@ Status BaseVisitor::HandleReshape(HloInstruction* hlo){
 Status BaseVisitor::HandleIota(HloInstruction* hlo){
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     auto shape = hlo->shape();
-    //const HloInstruction* input = hlo->operand(0);
     auto* iota_hlo = Cast<HloIotaInstruction>(hlo);
     int64_t iota_dimension = iota_hlo->iota_dimension();
 
@@ -895,24 +883,12 @@ Status BaseVisitor::HandleIota(HloInstruction* hlo){
         }
     }
 
-    // for(auto data:tensor_data){
-    //     std::cout<<data<<std::endl;
-    // }
-
     tim::vx::TensorSpec timSpec(tim::vx::DataType::FLOAT32, timShape,
                     tim::vx::TensorAttribute::INPUT);
 
     auto out_tensor = graph_->CreateTensor(timSpec,tensor_data.data());
 
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
-    //auto in_tensor = GetEvaluatedTensorFor(input);
-    // auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-    // auto convert = graph_->CreateOperation<tim::vx::ops::DataConvert>();
-    // (*convert).BindInput(in_tensor).BindOutput(out_tensor);
-
-    // //evaluatedDevMem_[hlo] = executor_->setTensor(out_tensor);
-    // kVsiRunTensorContainer_[hlo] = out_tensor;
     return Status::OK();
 }
 

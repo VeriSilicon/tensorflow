@@ -268,6 +268,8 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleReduce(HloInstruction* hlo) override;
 
+  // Status HandleReduceWindow(HloInstruction* hlo) override;
+
   Status HandleDot(HloInstruction* hlo) override;
 
   Status HandleIota(HloInstruction* hlo) override;
@@ -304,10 +306,10 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleReal)
   UNIMPLEMENTED(HandleAllToAll)
   UNIMPLEMENTED(HandleAddDependency)
-  //UNIMPLEMENTED(HandleElementwiseUnary)
+  // UNIMPLEMENTED(HandleElementwiseUnary)
   UNIMPLEMENTED(HandleClamp)
-  //UNIMPLEMENTED(HandleSelect)
-  //UNIMPLEMENTED(HandleCompare)
+  // UNIMPLEMENTED(HandleSelect)
+  // UNIMPLEMENTED(HandleCompare)
   UNIMPLEMENTED(HandleRng)
   UNIMPLEMENTED(HandleSlice)
   UNIMPLEMENTED(HandleDynamicSlice)
@@ -330,8 +332,8 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleBatchNormGrad)
   UNIMPLEMENTED(HandleFft)
   UNIMPLEMENTED(HandleGather)
-  //UNIMPLEMENTED(HandleCopy)
-  //UNIMPLEMENTED(HandleIota)
+  // UNIMPLEMENTED(HandleCopy)
+  // UNIMPLEMENTED(HandleIota)
   UNIMPLEMENTED(HandleScatter)
   UNIMPLEMENTED(HandleCollectivePermute)
   //UNIMPLEMENTED(HandleConcatenate)
@@ -344,7 +346,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleCopyStart)
   UNIMPLEMENTED(HandleCopyDone)
   UNIMPLEMENTED(HandleSetDimensionSize)
-  //UNIMPLEMENTED(HandleDot)
+  // UNIMPLEMENTED(HandleDot)
   UNIMPLEMENTED(HandleReduceWindow)
   UNIMPLEMENTED(HandleDynamicReshape)
   UNIMPLEMENTED(HandleAllGatherStart)
