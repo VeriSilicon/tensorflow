@@ -104,7 +104,9 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "XlaDot") return true;
   if (kdef->op() == "_Arg") return true;
   if (kdef->op() == "Add") return true;
-  // if (kdef->op() == "AddV2") return true;
+  if (kdef->op() == "AddV2") return true;
+  if (kdef->op() == "BiasAdd") return true;
+  if (kdef->op() == "BiasAddGrad") return true;
   if (kdef->op() == "Sub") return true;
   // if (kdef->op() == "Sqrt") return true;
   // if (kdef->op() == "Square") return true;

@@ -218,6 +218,22 @@ class BaseVisitor : public DfsHloVisitor {
   template <typename T>
   Status HandleSimpleElementwiseUnary(HloInstruction* hlo);
 
+  template <typename T>
+  Status CreateCompareOp(
+      std::shared_ptr<tim::vx::Tensor>& lhs_tensor,
+      std::shared_ptr<tim::vx::Tensor>& rhs_tensor,
+      std::shared_ptr<tim::vx::Tensor>& out_tensor);
+
+  template <typename T>
+  Status CreateReduceOp(std::shared_ptr<tim::vx::Tensor>& input,
+                        std::shared_ptr<tim::vx::Tensor>& output,
+                        std::vector<int32_t>& axis);
+
+  Status HandleReduceOpMap(HloOpcode opcode,
+                           std::shared_ptr<tim::vx::Tensor>& input,
+                           std::shared_ptr<tim::vx::Tensor>& output,
+                           std::vector<int32_t>& axis);
+
   Status HandleElementwiseBinary(HloInstruction* hlo) override;
 
   Status HandleElementwiseUnary(HloInstruction* hlo) override;

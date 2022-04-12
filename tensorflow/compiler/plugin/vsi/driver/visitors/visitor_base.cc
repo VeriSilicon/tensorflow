@@ -99,7 +99,8 @@ const Shape& BaseVisitor::GetOutputShape(HloInstruction* inst) const {
 
 /*the function should only be used by Handlexxxxx function so that the tensor maped to {$/hlo/$} has been created.
   the order of tensor's layout is the same as its shape: minjor to major   */
-std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstruction *hlo, std::vector<uint32_t> &dim_index){
+std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(
+    const HloInstruction* hlo, std::vector<uint32_t>& dim_index) {
     auto shape = hlo->shape();
     size_t dim_size = dim_index.size();
     std::vector<int64_t> output_dims(dim_size, 1);
@@ -107,11 +108,12 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
 
     auto input_tensor = GetEvaluatedTensorFor(hlo)[0];
 
-    /*check if the layout is {WHCN} , if not, a transpose would be inserted to covert the layout. */
+    /*check if the layout is {WHCN} , if not, a transpose would be inserted to
+    * covert the layout. */
     bool is_need_insert_transpose = false;
     for (int i = 0; i < dim_size; i++) {
         if (dim_index[i] == shape.layout().minor_to_major()[dim_size - i - 1]) {
-          perm[dim_size - 1 - i] = dim_size - i - 1;
+            perm[dim_size - 1 - i] = dim_size - i - 1;
         } else {
             is_need_insert_transpose = true;
             for (int j = 0; j < dim_size; j++) {
@@ -128,17 +130,18 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(const HloInstructi
         ss2 << perm[i] << " ";
         ss3 << shape.dimensions(i) << " ";
     }
-    LOG(INFO) << "insertTranspose 0: " << is_need_insert_transpose << " : " << dim_size;
+    LOG(INFO) << "insertTranspose 0: " << is_need_insert_transpose << " : "
+                << dim_size;
     LOG(INFO) << "insertTranspose 1: dim_index: " << ss.str();
     LOG(INFO) << "insertTranspose 2: minor_to_major: " << ss1.str();
     LOG(INFO) << "insertTranspose 3: perm: " << ss2.str();
     LOG(INFO) << "insertTranspose 4: hlo->shape: " << ss3.str();
 
-    if (is_need_insert_transpose){
+    if (is_need_insert_transpose) {
         LOG(INFO) << "insertTranspose 5: ";
         auto input_shape = input_tensor->GetShape();
         std::vector<uint32_t> output_shape;
-        for (auto d : perm){
+        for (auto d : perm) {
             output_shape.push_back(input_shape[d]);
         }
         auto output_tensor = createTensorFromShape(
@@ -196,7 +199,7 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo){
             break;
         }
         default:
-            LOG(INFO) << "has not been implement; opcode:" << hlo->opcode();
+            LOG(INFO) << "has not been implement; opcode:" << HloOpcodeString(hlo->opcode());
             return tensorflow::errors::Unimplemented(
                 "some HandleElementwiseUnary op has not been implement");
     }
@@ -224,20 +227,18 @@ Status BaseVisitor::HandleSimpleElementwiseBinary(HloInstruction* hlo) {
 }
 
 Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
+    LOG(INFO) << "PROCESS " << __FUNCTION__ << " : " << HloOpcodeString(hlo->opcode());
     switch (hlo->opcode())
     {
         case HloOpcode::kAdd:{
-            LOG(INFO) << "PROCESS Add";
             HandleSimpleElementwiseBinary<tim::vx::ops::Add>(hlo);
             break;
         }
         case HloOpcode::kSubtract:{
-            LOG(INFO) << "PROCESS Subtract";
             HandleSimpleElementwiseBinary<tim::vx::ops::Sub>(hlo);
             break;
         }
         case HloOpcode::kMultiply:{
-            LOG(INFO) << "PROCESS Multiply";
             auto shape = hlo->shape();
             const HloInstruction* lhs = hlo->operand(0);
             const HloInstruction* rhs = hlo->operand(1);
@@ -285,7 +286,6 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             break;
         }
         case HloOpcode::kDivide:{
-            LOG(INFO) << "PROCESS kDivide";
             auto shape = hlo->shape();
             const HloInstruction* lhs = hlo->operand(0);
             const HloInstruction* rhs = hlo->operand(1);
@@ -323,17 +323,15 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo){
             break;
         }
         case HloOpcode::kMaximum:{
-            LOG(INFO) << "PROCESS Maximum";
             HandleSimpleElementwiseBinary<tim::vx::ops::Maximum>(hlo);
             break;
         }
         case HloOpcode::kMinimum:{
-            LOG(INFO) << "PROCESS Maximum";
             HandleSimpleElementwiseBinary<tim::vx::ops::Minimum>(hlo);
             break;
         }
         default:
-            LOG(INFO) << "has not been implement; opcode:" << hlo->opcode();
+            LOG(INFO) << "has not been implement; opcode:" << HloOpcodeString(hlo->opcode());
             return tensorflow::errors::Unimplemented(
                 "some HandleElementwiseBinary op has not been implement");
     }
@@ -365,7 +363,7 @@ Status BaseVisitor::HandleTuple(HloInstruction* hlo){
     int64_t input_num = hlo->operand_count();
     for(int64_t i=0;i<input_num;i++ ){
         const HloInstruction* input = hlo->operand(i);
-        LOG(INFO) << "opcode : " << input->opcode();
+        LOG(INFO) << "opcode : " << HloOpcodeString(input->opcode());
         auto it = kVsiRunTensorContainer_.find(input);
         {
             std::ostringstream ss;
@@ -392,7 +390,7 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo){
     LOG(INFO) << "tuple_index : " << index << " :: " << hlo->operand_count();
     for (int64_t i = 0; i < hlo->operand_count(); i++) {
       const HloInstruction* input = hlo->operand(i);
-      LOG(INFO) << "opcode : " << input->opcode();
+      LOG(INFO) << "opcode : " << HloOpcodeString(input->opcode());
     }
 
     LOG(INFO) << "PROCESS 1 " << __FUNCTION__;
@@ -447,6 +445,45 @@ Status BaseVisitor::HandleCopy(HloInstruction* hlo){
     return Status::OK();
 }
 
+template <typename T>
+Status BaseVisitor::CreateReduceOp(std::shared_ptr<tim::vx::Tensor>& input,
+                                   std::shared_ptr<tim::vx::Tensor>& output,
+                                   std::vector<int32_t>& axis) {
+  auto reduce = graph_->CreateOperation<T>(axis, false);
+  (*reduce).BindInput(input).BindOutput(output);
+  return Status::OK();
+}
+
+Status BaseVisitor::HandleReduceOpMap(HloOpcode opcode,
+                                      std::shared_ptr<tim::vx::Tensor>& input,
+                                      std::shared_ptr<tim::vx::Tensor>& output,
+                                      std::vector<int32_t>& axis) {
+  switch (opcode) {
+    case HloOpcode::kAdd:
+        CreateReduceOp<tim::vx::ops::ReduceSum>(input, output, axis);
+        break;
+    case HloOpcode::kMultiply:
+        CreateReduceOp<tim::vx::ops::ReduceProd>(input, output, axis);
+        break;
+    case HloOpcode::kMaximum:
+        CreateReduceOp<tim::vx::ops::ReduceMax>(input, output, axis);
+        break;
+    case HloOpcode::kMinimum:
+        CreateReduceOp<tim::vx::ops::ReduceMin>(input, output, axis);
+        break;
+    case HloOpcode::kAnd:
+        CreateReduceOp<tim::vx::ops::ReduceAll>(input, output, axis);
+        break;
+    case HloOpcode::kOr:
+        CreateReduceOp<tim::vx::ops::ReduceAny>(input, output, axis);
+        break;
+    default:
+      return tensorflow::errors::Unimplemented(
+          "Unimplemented Compare Op: %s", HloOpcodeString(opcode).c_str());
+  }
+  return Status::OK();
+}
+
 Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
     LOG(INFO) << "PROCESS " << __FUNCTION__;
     auto shape = hlo->shape();
@@ -454,59 +491,82 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
 
     //CHECK_EQ(reduce_hlo->input_count(), 1);
     int64_t input_num = reduce_hlo->input_count();
+    LOG(INFO) << "HandleReduce input_count: " << input_num;
+    auto opcode = hlo->to_apply()->root_instruction()->opcode();
+    // LOG(INFO) << "HandleReduce hlo_computation: " << hlo_computation->root_instruction();
+    LOG(INFO) << "HandleReduce opcode: " << HloOpcodeString(opcode);
     if (input_num == 1) {
-      const HloInstruction* input = reduce_hlo->operand(0);
-      auto input_tensor = GetEvaluatedTensorFor(input)[0];
-
-      uint32_t input_tensor_dimensions = input_tensor->GetShape().size();
-
-      auto dimensions = hlo->dimensions();
-      std::cout << "HandleReduce dimension " << dimensions[0] << std::endl;
-
-      std::vector<int32_t> axis;
-      for (uint32_t i = 0; i < dimensions.size(); i++) {
-        axis.push_back(static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
-      }
-
-      auto out_tensor =
-          createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-
-      auto reduce =
-          graph_->CreateOperation<tim::vx::ops::ReduceMean>(axis, false);
-      (*reduce).BindInput(input_tensor).BindOutput(out_tensor);
-      kVsiRunTensorContainer_[hlo].push_back(out_tensor);
-    } else {
-      for (int64_t i = 0; i < input_num; i++) {
-        const HloInstruction* input = reduce_hlo->operand(i);
+        const HloInstruction* input = reduce_hlo->operand(0);
         auto input_tensor = GetEvaluatedTensorFor(input)[0];
 
         uint32_t input_tensor_dimensions = input_tensor->GetShape().size();
 
-        std::cout << "HandleReduce inputsize ";
-        for(auto dim: input_tensor->GetShape()){
-            std::cout << dim<<" ";
-        }
-        std::cout<<std::endl;
-
         auto dimensions = hlo->dimensions();
-        std::cout << "HandleReduce dimension " << dimensions[0] << std::endl;
+        {
+          std::ostringstream ss;
+          for (int i = 0; i < dimensions.size(); i++) {
+            ss << dimensions[i] << " ";
+          }
+          LOG(INFO) << " HandleReduce dimension: " << ss.str();
+        }
+
         std::vector<int32_t> axis;
         for (uint32_t i = 0; i < dimensions.size(); i++) {
-          axis.push_back(static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
-
-          auto out_tensor = createTensorFromTupleShape(
-              shape, i, tim::vx::TensorAttribute::OUTPUT);
-          auto reduce =
-              graph_->CreateOperation<tim::vx::ops::ReduceMean>(axis, false);
-          (*reduce).BindInput(input_tensor).BindOutput(out_tensor);
-          kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            axis.push_back(static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
         }
-      }
+
+        auto out_tensor =
+            createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+        HandleReduceOpMap(opcode, input_tensor, out_tensor, axis);
+        kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    } else {
+        for (int64_t i = 0; i < input_num; i++) {
+            const HloInstruction* input = reduce_hlo->operand(i);
+            auto input_tensor = GetEvaluatedTensorFor(input)[0];
+
+            uint32_t input_tensor_dimensions = input_tensor->GetShape().size();
+            {
+                std::ostringstream ss;
+                auto dims = input_tensor->GetShape();
+                for(int i = 0; i < dims.size(); i++) {
+                    ss << dims[i] << " ";
+                }
+                LOG(INFO) << " HandleReduce inputsize: " << ss.str();
+            }
+
+            auto dimensions = hlo->dimensions();
+            {
+                std::ostringstream ss;
+                for(int i = 0; i < dimensions.size(); i++) {
+                    ss << dimensions[i] << " ";
+                }
+                LOG(INFO) << " HandleReduce dimension: " << ss.str();
+            }
+
+            std::vector<int32_t> axis;
+            for (uint32_t i = 0; i < dimensions.size(); i++) {
+                axis.push_back(static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
+
+                auto out_tensor = createTensorFromTupleShape(
+                    shape, i, tim::vx::TensorAttribute::OUTPUT);
+                HandleReduceOpMap(opcode, input_tensor, out_tensor, axis);
+                kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+            }
+        }
     }
 
     return Status::OK();
 }
 
+template <typename T>
+Status BaseVisitor::CreateCompareOp(
+    std::shared_ptr<tim::vx::Tensor>& lhs_tensor,
+    std::shared_ptr<tim::vx::Tensor>& rhs_tensor,
+    std::shared_ptr<tim::vx::Tensor>& out_tensor) {
+    auto compare = graph_->CreateOperation<T>();
+    (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
+    return Status::OK();
+}
 
 Status BaseVisitor::HandleCompare(HloInstruction* hlo) {
     LOG(INFO) << "PROCESS " << __FUNCTION__;
@@ -526,43 +586,27 @@ Status BaseVisitor::HandleCompare(HloInstruction* hlo) {
     switch (compare_hlo->direction())
     {
     case ComparisonDirection::kEq:
-        {
-            auto compare = graph_->CreateOperation<tim::vx::ops::Equal>();
-            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-        }
+        CreateCompareOp<tim::vx::ops::Equal>(lhs_tensor, rhs_tensor, out_tensor);
         break;
     case ComparisonDirection::kNe:
-        {
-            auto compare = graph_->CreateOperation<tim::vx::ops::NotEqual>();
-            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-        }
+        CreateCompareOp<tim::vx::ops::NotEqual>(lhs_tensor, rhs_tensor, out_tensor);
         break;
     case ComparisonDirection::kGe:
-        {
-            auto compare = graph_->CreateOperation<tim::vx::ops::GreaterOrEqual>();
-            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-        }
+        CreateCompareOp<tim::vx::ops::GreaterOrEqual>(lhs_tensor, rhs_tensor, out_tensor);
         break;
     case ComparisonDirection::kGt:
-        {
-            auto compare = graph_->CreateOperation<tim::vx::ops::Greater>();
-            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-        }
+        CreateCompareOp<tim::vx::ops::Greater>(lhs_tensor, rhs_tensor, out_tensor);
         break;
     case ComparisonDirection::kLe:
-        {
-            auto compare = graph_->CreateOperation<tim::vx::ops::LessOrEqual>();
-            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-        }
+        CreateCompareOp<tim::vx::ops::LessOrEqual>(lhs_tensor, rhs_tensor, out_tensor);
         break;
     case ComparisonDirection::kLt:
-        {
-            auto compare = graph_->CreateOperation<tim::vx::ops::Less>();
-            (*compare).BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
-        }
+        CreateCompareOp<tim::vx::ops::Less>(lhs_tensor, rhs_tensor, out_tensor);
         break;
     default:
-        return tensorflow::errors::Unimplemented("Unimplemented Compare Op");
+        return tensorflow::errors::Unimplemented(
+            "Unimplemented Compare Op: %d",
+            (uint8)compare_hlo->direction());
     }
 
     kVsiRunTensorContainer_[hlo].push_back(out_tensor);
