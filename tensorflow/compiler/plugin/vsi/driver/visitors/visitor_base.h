@@ -268,7 +268,7 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleReduce(HloInstruction* hlo) override;
 
-  // Status HandleReduceWindow(HloInstruction* hlo) override;
+  Status HandleReduceWindow(HloInstruction* hlo) override;
 
   Status HandleDot(HloInstruction* hlo) override;
 
@@ -347,7 +347,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleCopyDone)
   UNIMPLEMENTED(HandleSetDimensionSize)
   // UNIMPLEMENTED(HandleDot)
-  UNIMPLEMENTED(HandleReduceWindow)
+  // UNIMPLEMENTED(HandleReduceWindow)
   UNIMPLEMENTED(HandleDynamicReshape)
   UNIMPLEMENTED(HandleAllGatherStart)
   UNIMPLEMENTED(HandleAllGatherDone)

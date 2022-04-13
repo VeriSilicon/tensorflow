@@ -129,6 +129,10 @@ static bool OpFilter(KernelDef* kdef) {
   if (kdef->op() == "Equal") return true;
   if (kdef->op() == "SoftmaxCrossEntropyWithLogits") return true;
   if (kdef->op() == "Pack") return true;
+  if (kdef->op() == "ConcatV2") return true;
+  if (kdef->op() == "Reshape") return true;
+  if (kdef->op() == "MaxPool") return true;
+  // if (kdef->op() == "MaxPoolGrad") return true;
 
   // if (kdef->op() == "XlaDot") return true;
   // if (kdef->op() == "RealDiv") return true;
