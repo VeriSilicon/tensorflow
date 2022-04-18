@@ -16,9 +16,9 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_PLUGIN_VSI_DRIVER_VISITORS_VISITOR_BASE_H_
 #define TENSORFLOW_COMPILER_PLUGIN_VSI_DRIVER_VISITORS_VISITOR_BASE_H_
 
+#include <mutex>
 #include <string>
 #include <unordered_map>
-#include <mutex>
 
 #include "tensorflow/compiler/plugin/vsi/driver/vsi_executor.h"
 #include "tensorflow/compiler/xla/service/dfs_hlo_visitor.h"
@@ -41,171 +41,174 @@ namespace vsiplugin {
  */
 class BaseVisitor : public DfsHloVisitor {
  public:
-    BaseVisitor(VsiExecutor* executor) : executor_(executor),
-    graph_(executor->getContext()->CreateGraph()) {};
+  BaseVisitor(VsiExecutor* executor)
+      : executor_(executor), graph_(executor->getContext()->CreateGraph()){};
 
-    std::shared_ptr<tim::vx::Tensor> createTensorFromTupleShape(const Shape &shape,
-        int64 index,tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
-        tim::vx::ShapeType timShape;
-        tim::vx::Quantization timQuant;
-        std::cout << "shape info 0: ";
+  std::shared_ptr<tim::vx::Tensor> createTensorFromTupleShape(
+      const Shape& shape, int64 index,
+      tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT) {
+    tim::vx::ShapeType timShape;
+    tim::vx::Quantization timQuant;
+    std::cout << "shape info 0: ";
 
-        auto output_shape = shape.tuple_shapes(index);
+    auto output_shape = shape.tuple_shapes(index);
 
-        if(output_shape.is_static() && output_shape.has_layout()){
-            for( auto d : output_shape.layout().minor_to_major())
-              timShape.push_back(output_shape.dimensions(d));
-        }
-
-        if(timShape.size() == 0){
-          timShape.push_back(1);
-        }
-        for (uint32_t i = 0; i < timShape.size(); i++) {
-          std::cout << timShape[i] << " ";
-        }
-        std::cout << std::endl;
-        auto type = convertTfPrimitiveTypeToTim(output_shape.element_type());
-        std::unique_lock<std::mutex> lock(mutex_);
-        tim::vx::TensorSpec timSpec(type, timShape,
-                    attr, timQuant);
-        return graph_->CreateTensor(timSpec);
-    }
-  
-    std::shared_ptr<tim::vx::Tensor> createTensorFromShape(const Shape &shape,
-        tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
-        tim::vx::ShapeType timShape;
-        tim::vx::Quantization timQuant;
-        std::cout<<"shape info 1: ";
-        if(shape.is_static() && shape.has_layout()){
-            for( auto d : shape.layout().minor_to_major())
-              timShape.push_back(shape.dimensions(d));
-        }
-
-        if(timShape.size() == 0){
-          timShape.push_back(1);
-        }
-        for (uint32_t i = 0; i < timShape.size(); i++) {
-          std::cout << timShape[i] << " ";
-        }
-        std::cout << std::endl;
-        auto type = convertTfPrimitiveTypeToTim(shape.element_type());
-        std::unique_lock<std::mutex> lock(mutex_);
-        tim::vx::TensorSpec timSpec(type, timShape,
-                    attr, timQuant);
-        return graph_->CreateTensor(timSpec);
+    if (output_shape.is_static() && output_shape.has_layout()) {
+      for (auto d : output_shape.layout().minor_to_major())
+        timShape.push_back(output_shape.dimensions(d));
     }
 
-    std::shared_ptr<tim::vx::Tensor> createTensorFromShape(tim::vx::DataType dataType,
-        std::vector<uint32_t> shape,
-        tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT){
-        tim::vx::ShapeType timShape;
-        tim::vx::Quantization timQuant;
-        for( auto d : shape)
-          timShape.push_back(d);
-        std::cout << "shape info 2: ";
-        if(timShape.size() == 0){
-          timShape.push_back(1);
-        }
-        for (uint32_t i = 0; i < timShape.size(); i++) {
-          std::cout << timShape[i] << " ";
-        }
-        std::cout << std::endl;
-
-        std::unique_lock<std::mutex> lock(mutex_);
-        tim::vx::TensorSpec timSpec(dataType, timShape,
-                    attr, timQuant);
-        return graph_->CreateTensor(timSpec);
+    if (timShape.size() == 0) {
+      timShape.push_back(1);
     }
-
-  static tim::vx::DataType convertTfPrimitiveTypeToTim(xla::PrimitiveType xlaType){
-    LOG(INFO) << "convertTfPrimitiveTypeToTim: xlaType: " << xlaType;
-      switch(xlaType){
-        case PRED:{
-          return tim::vx::DataType::BOOL8;
-        }
-        case S64:{
-          return tim::vx::DataType::INT32;
-        }
-        case S8:{
-          return tim::vx::DataType::INT8;
-        }
-        case U8:{
-          return tim::vx::DataType::UINT8;
-        }
-        case S16:{
-          return tim::vx::DataType::INT16;
-        }
-        case U16:{
-          return tim::vx::DataType::UINT16;
-        }
-        case S32:{
-          return tim::vx::DataType::INT32;
-        }
-        case U32:{
-          return tim::vx::DataType::UINT32;
-        }
-        case F32:{
-          return tim::vx::DataType::FLOAT32;
-        }
-        case BF16:{
-          return tim::vx::DataType::FLOAT16;
-        }
-        case F16:{
-          return tim::vx::DataType::FLOAT16;
-        }
-        case F64:{
-          return tim::vx::DataType::FLOAT32;
-        }
-        default:
-          LOG(FATAL)<<"not supported datat type";
-      }
+    for (uint32_t i = 0; i < timShape.size(); i++) {
+      std::cout << timShape[i] << " ";
+    }
+    std::cout << std::endl;
+    auto type = convertTfPrimitiveTypeToTim(output_shape.element_type());
+    std::unique_lock<std::mutex> lock(mutex_);
+    tim::vx::TensorSpec timSpec(type, timShape, attr, timQuant);
+    return graph_->CreateTensor(timSpec);
   }
 
-  /*dim_index: store the demension index info of the $hlo$ as order major_to_minor: {N, C, ..... }
-    if it should be inserted a transpose, its output would be returned.*/
-  std::shared_ptr<tim::vx::Tensor> insertTranspose(const HloInstruction *hlo, std::vector<uint32_t> &dim_index);
+  std::shared_ptr<tim::vx::Tensor> createTensorFromShape(
+      const Shape& shape,
+      tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT) {
+    tim::vx::ShapeType timShape;
+    tim::vx::Quantization timQuant;
+    std::cout << "shape info 1: ";
+    if (shape.is_static() && shape.has_layout()) {
+      for (auto d : shape.layout().minor_to_major())
+        timShape.push_back(shape.dimensions(d));
+    }
+
+    if (timShape.size() == 0) {
+      timShape.push_back(1);
+    }
+    for (uint32_t i = 0; i < timShape.size(); i++) {
+      std::cout << timShape[i] << " ";
+    }
+    std::cout << std::endl;
+    auto type = convertTfPrimitiveTypeToTim(shape.element_type());
+    std::unique_lock<std::mutex> lock(mutex_);
+    tim::vx::TensorSpec timSpec(type, timShape, attr, timQuant);
+    return graph_->CreateTensor(timSpec);
+  }
+
+  std::shared_ptr<tim::vx::Tensor> createTensorFromShape(
+      tim::vx::DataType dataType, std::vector<uint32_t> shape,
+      tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT) {
+    tim::vx::ShapeType timShape;
+    tim::vx::Quantization timQuant;
+    for (auto d : shape) timShape.push_back(d);
+    std::cout << "shape info 2: ";
+    if (timShape.size() == 0) {
+      timShape.push_back(1);
+    }
+    for (uint32_t i = 0; i < timShape.size(); i++) {
+      std::cout << timShape[i] << " ";
+    }
+    std::cout << std::endl;
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    tim::vx::TensorSpec timSpec(dataType, timShape, attr, timQuant);
+    return graph_->CreateTensor(timSpec);
+  }
+
+  static tim::vx::DataType convertTfPrimitiveTypeToTim(
+      xla::PrimitiveType xlaType) {
+    LOG(INFO) << "convertTfPrimitiveTypeToTim: xlaType: " << xlaType;
+    switch (xlaType) {
+      case PRED: {
+        return tim::vx::DataType::BOOL8;
+      }
+      case S64: {
+        return tim::vx::DataType::INT32;
+      }
+      case S8: {
+        return tim::vx::DataType::INT8;
+      }
+      case U8: {
+        return tim::vx::DataType::UINT8;
+      }
+      case S16: {
+        return tim::vx::DataType::INT16;
+      }
+      case U16: {
+        return tim::vx::DataType::UINT16;
+      }
+      case S32: {
+        return tim::vx::DataType::INT32;
+      }
+      case U32: {
+        return tim::vx::DataType::UINT32;
+      }
+      case F32: {
+        return tim::vx::DataType::FLOAT32;
+      }
+      case BF16: {
+        return tim::vx::DataType::FLOAT16;
+      }
+      case F16: {
+        return tim::vx::DataType::FLOAT16;
+      }
+      case F64: {
+        return tim::vx::DataType::FLOAT32;
+      }
+      default:
+        LOG(FATAL) << "not supported datat type";
+    }
+  }
+
+  /*dim_index: store the demension index info of the $hlo$ as order
+    major_to_minor: {N, C, ..... } if it should be inserted a transpose, its
+    output would be returned.*/
+  std::shared_ptr<tim::vx::Tensor> insertTranspose(
+      const HloInstruction* hlo, std::vector<uint32_t>& dim_index);
 
   virtual const Shape& GetOutputShape(HloInstruction*) const;
 
-    Literal evaluate(const HloComputation& computation
-         /*absl::Span<const Literal* const> arg_literals*/);
-    
-    std::vector<std::shared_ptr<tim::vx::Tensor>> evaluate(const HloComputation& computation,
-        std::vector<Literal>& argument_literals);
+  Literal evaluate(const HloComputation& computation
+                   /*absl::Span<const Literal* const> arg_literals*/);
 
-    Status HandleHloOp(HloInstruction* hlo);
+  std::vector<std::shared_ptr<tim::vx::Tensor>> evaluate(
+      const HloComputation& computation,
+      std::vector<Literal>& argument_literals);
 
-    Status FinishVisit(HloInstruction* root) final;
+  Status HandleHloOp(HloInstruction* hlo);
 
-    // Returns the already-evaluated literal result for the instruction.
-    //
-    // A Constant instruction is considered evaluated and its literal will be
-    // returned directly without looking up the cache.
-    //
-    // Similarly, a Parameter instruction is considered evaluated and its literal
-    // is looked up in arg_literals.
-    //
-    // Crash with log if the given instruction has not been evaluated previously.
-    const Literal& GetEvaluatedLiteralFor(const HloInstruction* hlo) {
-        if (hlo->IsConstant()) {
-            return hlo->literal();
-        }
-        // if (hlo->opcode() == HloOpcode::kParameter) {
-        //     return *arg_literals_.at(hlo->parameter_number());
-        // }
-        auto it = evaluated_.find(hlo);
-        CHECK(it != evaluated_.end())
-            << "could not find evaluated value for: " << hlo->ToString();
-        return it->second;
+  Status FinishVisit(HloInstruction* root) final;
+
+  // Returns the already-evaluated literal result for the instruction.
+  //
+  // A Constant instruction is considered evaluated and its literal will be
+  // returned directly without looking up the cache.
+  //
+  // Similarly, a Parameter instruction is considered evaluated and its literal
+  // is looked up in arg_literals.
+  //
+  // Crash with log if the given instruction has not been evaluated previously.
+  const Literal& GetEvaluatedLiteralFor(const HloInstruction* hlo) {
+    if (hlo->IsConstant()) {
+      return hlo->literal();
     }
+    // if (hlo->opcode() == HloOpcode::kParameter) {
+    //     return *arg_literals_.at(hlo->parameter_number());
+    // }
+    auto it = evaluated_.find(hlo);
+    CHECK(it != evaluated_.end())
+        << "could not find evaluated value for: " << hlo->ToString();
+    return it->second;
+  }
 
-    const std::vector<std::shared_ptr<tim::vx::Tensor>> GetEvaluatedTensorFor(const HloInstruction* hlo) {
-        //return createTensorFromShape(hlo->shape());
-        auto it = kVsiRunTensorContainer_.find(hlo);
-        CHECK(it != kVsiRunTensorContainer_.end())
-            << "could not find evaluated value for: " << hlo->ToString();
-        return kVsiRunTensorContainer_[hlo];
-    }
+  const std::vector<std::shared_ptr<tim::vx::Tensor>> GetEvaluatedTensorFor(
+      const HloInstruction* hlo) {
+    // return createTensorFromShape(hlo->shape());
+    auto it = kVsiRunTensorContainer_.find(hlo);
+    CHECK(it != kVsiRunTensorContainer_.end())
+        << "could not find evaluated value for: " << hlo->ToString();
+    return kVsiRunTensorContainer_[hlo];
+  }
 
   // Called by HandleElementwiseBinarythe FinishVisit.
   virtual Status FinishScopedVisit(HloInstruction* root) {
@@ -219,10 +222,9 @@ class BaseVisitor : public DfsHloVisitor {
   Status HandleSimpleElementwiseUnary(HloInstruction* hlo);
 
   template <typename T>
-  Status CreateCompareOp(
-      std::shared_ptr<tim::vx::Tensor>& lhs_tensor,
-      std::shared_ptr<tim::vx::Tensor>& rhs_tensor,
-      std::shared_ptr<tim::vx::Tensor>& out_tensor);
+  Status CreateCompareOp(std::shared_ptr<tim::vx::Tensor>& lhs_tensor,
+                         std::shared_ptr<tim::vx::Tensor>& rhs_tensor,
+                         std::shared_ptr<tim::vx::Tensor>& out_tensor);
 
   template <typename T>
   Status CreateReduceOp(std::shared_ptr<tim::vx::Tensor>& input,
@@ -256,12 +258,12 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleConvert(HloInstruction* hlo) override;
 
-  //Status HandleSlice(HloInstruction* hlo) override;
+  // Status HandleSlice(HloInstruction* hlo) override;
 
   Status HandleBroadcast(HloInstruction* hlo) override;
 
   Status HandleConcatenate(HloInstruction* hlo) override;
-  
+
   Status HandleCompare(HloInstruction* hlo) override;
 
   Status HandleSelect(HloInstruction* hlo) override;
@@ -282,14 +284,14 @@ class BaseVisitor : public DfsHloVisitor {
   /*
    * Operations not processed by this visitor.
    */
-#define UNIMPLEMENTED(Name) \
-  Status Name(HloInstruction* inst) override { \
-    LOG(INFO)<< "@@ unimplement instruction "<<__FUNCTION__; \
-    return Unimplemented(inst); \
-    };
+#define UNIMPLEMENTED(Name)                                     \
+  Status Name(HloInstruction* inst) override {                  \
+    LOG(INFO) << "@@ unimplement instruction " << __FUNCTION__; \
+    return Unimplemented(inst);                                 \
+  };
 
   UNIMPLEMENTED(HandleTupleSelect)
-  //UNIMPLEMENTED(HandleConvert)
+  // UNIMPLEMENTED(HandleConvert)
   UNIMPLEMENTED(HandleCollectivePermuteStart)
   UNIMPLEMENTED(HandleCollectivePermuteDone)
   UNIMPLEMENTED(HandleRngBitGenerator)
@@ -318,9 +320,9 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleWhile)
   UNIMPLEMENTED(HandlePad)
   UNIMPLEMENTED(HandleSort)
-  //UNIMPLEMENTED(HandleReduce)
+  // UNIMPLEMENTED(HandleReduce)
   UNIMPLEMENTED(HandleBitcast)
-  //UNIMPLEMENTED(HandleBroadcast)
+  // UNIMPLEMENTED(HandleBroadcast)
   UNIMPLEMENTED(HandleReducePrecision)
   UNIMPLEMENTED(HandleOutfeed)
   UNIMPLEMENTED(HandleSend)
@@ -336,7 +338,7 @@ class BaseVisitor : public DfsHloVisitor {
   // UNIMPLEMENTED(HandleIota)
   UNIMPLEMENTED(HandleScatter)
   UNIMPLEMENTED(HandleCollectivePermute)
-  //UNIMPLEMENTED(HandleConcatenate)
+  // UNIMPLEMENTED(HandleConcatenate)
   UNIMPLEMENTED(HandleGetDimensionSize)
   UNIMPLEMENTED(HandleReplicaId)
   UNIMPLEMENTED(HandleTriangularSolve)
@@ -362,23 +364,25 @@ class BaseVisitor : public DfsHloVisitor {
 
   std::unique_ptr<HloEvaluator> cpu_evaluator_;
 
-private:
-    VsiExecutor *executor_;
+ private:
+  VsiExecutor* executor_;
 
-    // Tracks the HLO instruction and its evaluated literal result.
-    // Parameters and constants aren't stored here,
-    // TODO: it is better the Literal value was repalced with device memory
-    //       handle.
-    std::mutex mutex_;
-    std::unordered_map<const HloInstruction *, Literal> evaluated_ TF_GUARDED_BY(mutex_);
-    std::unordered_map<const HloInstruction*, std::vector<std::shared_ptr<tim::vx::Tensor>>>
-        kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
-    // std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
-    //     kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
-    std::vector<Literal> arg_literals_;
-    std::unordered_map<int64, uint32_t> kVsiInputId_ TF_GUARDED_BY(mutex_);
-    std::shared_ptr<tim::vx::Graph> graph_;
-    bool is_build_ = false;
+  // Tracks the HLO instruction and its evaluated literal result.
+  // Parameters and constants aren't stored here,
+  // TODO: it is better the Literal value was repalced with device memory
+  //       handle.
+  std::mutex mutex_;
+  std::unordered_map<const HloInstruction*, Literal> evaluated_
+      TF_GUARDED_BY(mutex_);
+  std::unordered_map<const HloInstruction*,
+                     std::vector<std::shared_ptr<tim::vx::Tensor>>>
+      kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
+  // std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
+  //     kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
+  std::vector<Literal> arg_literals_;
+  std::unordered_map<int64, uint32_t> kVsiInputId_ TF_GUARDED_BY(mutex_);
+  std::shared_ptr<tim::vx::Graph> graph_;
+  bool is_build_ = false;
 };
 
 }  // namespace vsiplugin
