@@ -4,7 +4,7 @@ https://www.jianshu.com/p/6beedc7f83da
 """
 
 import os
-input("pid: " + str(os.getpid()) +", press enter after attached")
+# input("pid: " + str(os.getpid()) +", press enter after attached")
 import numpy as np
 import tensorflow as tf
 # from tensorflow.keras.mixed_precision import experimental as mixed_precision
@@ -120,8 +120,8 @@ train_model(model, x_train, y_train, x_test, y_test,
   epochs=EPOCHS, batch_size=BATCH_SIZE)
 model.summary()
 
-weight_grads = get_weight_grad(model, x_train, y_train)
-dump_tensors(weight_grads, "grads", model.trainable_weights)
+# weight_grads = get_weight_grad(model, x_train, y_train)
+# dump_tensors(weight_grads, "grads", model.trainable_weights)
 
 if not os.path.exists(MODEL_FILE):
   json_string = model.to_json()
