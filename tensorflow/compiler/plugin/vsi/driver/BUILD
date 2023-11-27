@@ -82,7 +82,8 @@ cc_library(
     name = "vsi_executor",
     srcs = ["vsi_executor.cc"],
     hdrs = ["vsi_executor.h",
-            "vsi_utils.h"
+            "vsi_utils.h",
+            "xla_vsi_common.h",
     ],
     deps = [
         "//tensorflow/compiler/xla:shape_util",
@@ -164,7 +165,7 @@ cc_library(
     srcs = [
         "xla_vsi_npu_device.cc",
     ],
-    hdrs = [],
+    hdrs = ["xla_vsi_common.h"],
     data = [
     ],
     linkstatic = 1,
@@ -186,20 +187,30 @@ cc_library(
     name = "visitor_base",
     srcs = [
         "visitors/visitor_base.cc",
+        "vsi_custom_op.cc",
+        "custom_kernels_util.cc",
     ],
-    hdrs = ["visitors/visitor_base.h"],
+    hdrs = [
+        "visitors/visitor_base.h",
+        "custom_kernels_util.h",
+        "xla_vsi_common.h",
+    ],
     deps = [
         ":vsi_executor",
         "//tensorflow/compiler/xla/service/cpu:runtime_single_threaded_matmul",
         "//tensorflow/compiler/xla/service:dynamic_dimension_inference",
         "//tensorflow/compiler/xla/service:hlo",
         "//tensorflow/compiler/xla/service:hlo_evaluator",
+        "//tensorflow/compiler/xla/service:hlo_execution_profile",
         "//tensorflow/compiler/xla/service:hlo_query",
         "//tensorflow/compiler/xla/service:hlo_value",
         "//tensorflow/compiler/xla/service:hlo_buffer",
         "//tensorflow/compiler/xla/service:shape_inference",
         "//tensorflow/compiler/xla/service:shaped_buffer",
         "//tensorflow/compiler/xla/service:buffer_assignment",
+        "//tensorflow/core/profiler/lib:traceme",
+        "//tensorflow/core/profiler/lib:connected_traceme",
+        "//tensorflow/core/profiler/lib:annotated_traceme",
         "//tensorflow/compiler/xla:array2d",
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:literal_util",
@@ -209,6 +220,7 @@ cc_library(
         "//tensorflow/compiler/xla:util",
         "//tensorflow/compiler/xla:window_util",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
+        "//tensorflow/compiler/tf2xla:xla_compiler",
         "//tensorflow/core:lib",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
@@ -219,7 +231,9 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
-        "@TIM_VX//:libtim-vx.so"
+        "@com_google_absl//absl/types:any",
+        "@TIM_VX//:libtim-vx.so",
+        "@jsoncpp_git//:jsoncpp",
     ],
 )
 cc_library(

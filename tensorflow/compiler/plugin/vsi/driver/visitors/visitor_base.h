@@ -42,9 +42,15 @@ namespace vsiplugin {
 class BaseVisitor : public DfsHloVisitor {
  public:
   BaseVisitor(VsiExecutor* executor)
-      : executor_(executor), graph_(executor->getContext()->CreateGraph()){};
+      : executor_(executor), graph_(executor->getContext()->CreateGraph()){
+    custom_call_map_.emplace(
+        std::make_pair("CustomCallLogSoftmax", CustomCallLogSoftmax));
+    custom_call_map_.emplace(std::make_pair("CustomCallTopK", CustomCallTopK));
+    custom_call_map_.emplace(
+        std::make_pair("CustomCallSqueeze", CustomCallSqueeze));
+  };
 
-  std::shared_ptr<tim::vx::Tensor> createTensorFromTupleShape(
+  std::shared_ptr<tim::vx::Tensor> CreateTensorFromTupleShape(
       const Shape& shape, int64 index,
       tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT) {
     tim::vx::ShapeType timShape;
@@ -71,7 +77,7 @@ class BaseVisitor : public DfsHloVisitor {
     return graph_->CreateTensor(timSpec);
   }
 
-  std::shared_ptr<tim::vx::Tensor> createTensorFromShape(
+  std::shared_ptr<tim::vx::Tensor> CreateTensorFromShape(
       const Shape& shape,
       tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT) {
     tim::vx::ShapeType timShape;
@@ -95,7 +101,7 @@ class BaseVisitor : public DfsHloVisitor {
     return graph_->CreateTensor(timSpec);
   }
 
-  std::shared_ptr<tim::vx::Tensor> createTensorFromShape(
+  std::shared_ptr<tim::vx::Tensor> CreateTensorFromShape(
       tim::vx::DataType dataType, std::vector<uint32_t> shape,
       tim::vx::TensorAttribute attr = tim::vx::TensorAttribute::INPUT) {
     tim::vx::ShapeType timShape;
@@ -163,7 +169,7 @@ class BaseVisitor : public DfsHloVisitor {
   /*dim_index: store the demension index info of the $hlo$ as order
     major_to_minor: {N, C, ..... } if it should be inserted a transpose, its
     output would be returned.*/
-  std::shared_ptr<tim::vx::Tensor> insertTranspose(
+  std::shared_ptr<tim::vx::Tensor> InsertTranspose(
       const HloInstruction* hlo, std::vector<uint32_t>& dim_index);
 
   virtual const Shape& GetOutputShape(HloInstruction*) const;
@@ -203,11 +209,11 @@ class BaseVisitor : public DfsHloVisitor {
 
   const std::vector<std::shared_ptr<tim::vx::Tensor>> GetEvaluatedTensorFor(
       const HloInstruction* hlo) {
-    // return createTensorFromShape(hlo->shape());
-    auto it = kVsiRunTensorContainer_.find(hlo);
-    CHECK(it != kVsiRunTensorContainer_.end())
+    // return CreateTensorFromShape(hlo->shape());
+    auto it = vsi_run_tensor_container_.find(hlo);
+    CHECK(it != vsi_run_tensor_container_.end())
         << "could not find evaluated value for: " << hlo->ToString();
-    return kVsiRunTensorContainer_[hlo];
+    return vsi_run_tensor_container_[hlo];
   }
 
   // Called by HandleElementwiseBinarythe FinishVisit.
@@ -258,6 +264,8 @@ class BaseVisitor : public DfsHloVisitor {
 
   Status HandleConvert(HloInstruction* hlo) override;
 
+  Status HandlePad(HloInstruction* hlo) override;
+
   // Status HandleSlice(HloInstruction* hlo) override;
 
   Status HandleBroadcast(HloInstruction* hlo) override;
@@ -277,6 +285,26 @@ class BaseVisitor : public DfsHloVisitor {
   Status HandleIota(HloInstruction* hlo) override;
 
   Status HandleCopy(HloInstruction* hlo) override;
+
+  Status HandleScatter(HloInstruction* hlo) override;
+
+  Status HandleSelectAndScatter(HloInstruction* hlo) override;
+
+  Status HandleGather(HloInstruction* hlo) override;
+
+  Status HandleSlice(HloInstruction* hlo) override;
+
+  Status HandleCustomCall(HloInstruction* inst) override;
+
+  static Status CustomCallLogSoftmax(HloInstruction* inst, BaseVisitor* bv);
+
+  static Status CustomCallTopK(HloInstruction* inst, BaseVisitor* bv);
+
+  static Status CustomCallSqueeze(HloInstruction* inst, BaseVisitor* bv);
+
+  // static Status CustomCallSoftmax(HloInstruction* inst, BaseVisitor* bv);
+
+  // static Status CustomCallArgMax(HloInstruction* inst, BaseVisitor* bv);
 
 #define HANDLE_AS_HLO_OP(Name) \
   Status Name(HloInstruction* inst) override { return HandleHloOp(inst); }
@@ -300,7 +328,7 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleAllGather)
   UNIMPLEMENTED(HandleFusion)
   UNIMPLEMENTED(HandleCall)
-  UNIMPLEMENTED(HandleCustomCall)
+  // UNIMPLEMENTED(HandleCustomCall)
   UNIMPLEMENTED(HandleMap)
   UNIMPLEMENTED(HandleConditional)
   UNIMPLEMENTED(HandleInfeed)
@@ -313,12 +341,12 @@ class BaseVisitor : public DfsHloVisitor {
   // UNIMPLEMENTED(HandleSelect)
   // UNIMPLEMENTED(HandleCompare)
   UNIMPLEMENTED(HandleRng)
-  UNIMPLEMENTED(HandleSlice)
+  // UNIMPLEMENTED(HandleSlice)
   UNIMPLEMENTED(HandleDynamicSlice)
   UNIMPLEMENTED(HandleDynamicUpdateSlice)
-  UNIMPLEMENTED(HandleSelectAndScatter)
+  // UNIMPLEMENTED(HandleSelectAndScatter)
   UNIMPLEMENTED(HandleWhile)
-  UNIMPLEMENTED(HandlePad)
+  // UNIMPLEMENTED(HandlePad)
   UNIMPLEMENTED(HandleSort)
   // UNIMPLEMENTED(HandleReduce)
   UNIMPLEMENTED(HandleBitcast)
@@ -333,10 +361,10 @@ class BaseVisitor : public DfsHloVisitor {
   UNIMPLEMENTED(HandleBatchNormTraining)
   UNIMPLEMENTED(HandleBatchNormGrad)
   UNIMPLEMENTED(HandleFft)
-  UNIMPLEMENTED(HandleGather)
+  // UNIMPLEMENTED(HandleGather)
   // UNIMPLEMENTED(HandleCopy)
   // UNIMPLEMENTED(HandleIota)
-  UNIMPLEMENTED(HandleScatter)
+  // UNIMPLEMENTED(HandleScatter)
   UNIMPLEMENTED(HandleCollectivePermute)
   // UNIMPLEMENTED(HandleConcatenate)
   UNIMPLEMENTED(HandleGetDimensionSize)
@@ -376,12 +404,12 @@ class BaseVisitor : public DfsHloVisitor {
       TF_GUARDED_BY(mutex_);
   std::unordered_map<const HloInstruction*,
                      std::vector<std::shared_ptr<tim::vx::Tensor>>>
-      kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
-  // std::unordered_map<const HloInstruction*, std::shared_ptr<tim::vx::Tensor>>
-  //     kVsiRunTensorContainer_ TF_GUARDED_BY(mutex_);
+      vsi_run_tensor_container_ TF_GUARDED_BY(mutex_);
   std::vector<Literal> arg_literals_;
   std::unordered_map<int64, uint32_t> kVsiInputId_ TF_GUARDED_BY(mutex_);
   std::shared_ptr<tim::vx::Graph> graph_;
+  typedef Status (*cc_ptr)(xla::HloInstruction*, BaseVisitor* bv);
+  std::unordered_map<std::string, cc_ptr> custom_call_map_;
   bool is_build_ = false;
 };
 

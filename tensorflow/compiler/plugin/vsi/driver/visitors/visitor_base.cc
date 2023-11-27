@@ -32,15 +32,54 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_opcode.h"
 #include "tensorflow/compiler/xla/shape_util.h"
+#include "tensorflow/compiler/xla/window_util.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/stream_executor/lib/initialize.h"
+#include "tensorflow/compiler/plugin/vsi/driver/custom_kernels_util.h"
 #include "tim/vx/operation.h"
 #include "tim/vx/ops.h"
-using tensorflow::str_util::StartsWith;
 
 namespace xla {
 namespace vsiplugin {
+
+bool IsRootHlo(const HloInstruction* hlo) {
+  bool is_root = false;
+#if 1
+  if (hlo->users().size() > 0) {
+    std::vector<HloOpcode> mpi_list = {HloOpcode::kAllReduce};
+    if (std::any_of(mpi_list.begin(), mpi_list.end(), [hlo](HloOpcode op) {
+          return op == hlo->users()[0]->opcode();
+        })) {
+      // LOG(INFO) << "FFFTT IsRootHlo: mpi_list";
+      return true;
+    }
+  }
+
+  const HloInstruction* root = hlo->parent()->root_instruction();
+  std::vector<HloOpcode> except_list = {HloOpcode::kGetTupleElement,
+                                        HloOpcode::kTuple, HloOpcode::kCopy};
+  if (std::none_of(except_list.begin(), except_list.end(),
+                   [root](HloOpcode op) { return op == root->opcode(); })) {
+    return (root == hlo);
+  }
+
+  auto root1 = root;
+  if (root->opcode() == HloOpcode::kGetTupleElement) {
+    root1 = root->operand(0);
+  }
+  for (auto operand : root1->operands()) {
+    const HloInstruction* operand1 = operand;
+    while (operand1->opcode() == HloOpcode::kCopy) {
+      operand1 = operand1->operand(0);
+    }
+    if (operand1 == hlo) {
+      return true;
+    }
+  }
+#endif
+  return is_root;
+}
 
 Literal BaseVisitor::evaluate(
     const HloComputation& computation
@@ -101,7 +140,7 @@ const Shape& BaseVisitor::GetOutputShape(HloInstruction* inst) const {
 /*the function should only be used by Handlexxxxx function so that the tensor
   maped to {$/hlo/$} has been created.
   the order of tensor's layout is the same as its shape: minjor to major   */
-std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(
+std::shared_ptr<tim::vx::Tensor> BaseVisitor::InsertTranspose(
     const HloInstruction* hlo, std::vector<uint32_t>& dim_index) {
   auto shape = hlo->shape();
   size_t dim_size = dim_index.size();
@@ -132,21 +171,21 @@ std::shared_ptr<tim::vx::Tensor> BaseVisitor::insertTranspose(
     ss2 << perm[i] << " ";
     ss3 << shape.dimensions(i) << " ";
   }
-  LOG(INFO) << "insertTranspose 0: " << is_need_insert_transpose << " : "
+  LOG(INFO) << "InsertTranspose 0: " << is_need_insert_transpose << " : "
             << dim_size;
-  LOG(INFO) << "insertTranspose 1: dim_index: " << ss.str();
-  LOG(INFO) << "insertTranspose 2: minor_to_major: " << ss1.str();
-  LOG(INFO) << "insertTranspose 3: perm: " << ss2.str();
-  LOG(INFO) << "insertTranspose 4: hlo->shape: " << ss3.str();
+  LOG(INFO) << "InsertTranspose 1: dim_index: " << ss.str();
+  LOG(INFO) << "InsertTranspose 2: minor_to_major: " << ss1.str();
+  LOG(INFO) << "InsertTranspose 3: perm: " << ss2.str();
+  LOG(INFO) << "InsertTranspose 4: hlo->shape: " << ss3.str();
 
   if (is_need_insert_transpose) {
-    LOG(INFO) << "insertTranspose 5: ";
+    LOG(INFO) << "InsertTranspose 5: ";
     auto input_shape = input_tensor->GetShape();
     std::vector<uint32_t> output_shape;
     for (auto d : perm) {
       output_shape.push_back(input_shape[d]);
     }
-    auto output_tensor = createTensorFromShape(
+    auto output_tensor = CreateTensorFromShape(
         convertTfPrimitiveTypeToTim(hlo->shape().element_type()), output_shape,
         tim::vx::TensorAttribute::OUTPUT);
     auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(perm);
@@ -162,14 +201,15 @@ Status BaseVisitor::HandleSimpleElementwiseUnary(HloInstruction* hlo) {
   auto shape = hlo->shape();
   const HloInstruction* input = hlo->operand(0);
   TF_RET_CHECK(ShapeUtil::SameDimensions(shape, input->shape()));
-  auto inout_tensor = GetEvaluatedTensorFor(input)[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+  auto input_tensor = GetEvaluatedTensorFor(input)[0];
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
 
   auto op = graph_->CreateOperation<T>();
-  op->BindInput(inout_tensor).BindOutput(out_tensor);
+  op->BindInput(input_tensor).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -192,6 +232,28 @@ Status BaseVisitor::HandleElementwiseUnary(HloInstruction* hlo) {
     case HloOpcode::kSqrt:
       HandleSimpleElementwiseUnary<tim::vx::ops::Sqrt>(hlo);
       break;
+case HloOpcode::kRsqrt:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Rsqrt>(hlo);
+      break;
+    case HloOpcode::kCeil:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Ceil>(hlo);
+      break;
+    case HloOpcode::kAbs:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Abs>(hlo);
+      break;
+    case HloOpcode::kTanh:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Tanh>(hlo);
+      break;
+    case HloOpcode::kRoundNearestAfz:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Round>(hlo);
+      break;
+    case HloOpcode::kFloor:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Floor>(hlo);
+      break;
+    case HloOpcode::kSin:
+      HandleSimpleElementwiseUnary<tim::vx::ops::Sin>(hlo);
+      break;
+
     default:
       LOG(INFO) << "has not been implement; opcode:"
                 << HloOpcodeString(hlo->opcode());
@@ -211,12 +273,13 @@ Status BaseVisitor::HandleSimpleElementwiseBinary(HloInstruction* hlo) {
 
   auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
   auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
   auto op = graph_->CreateOperation<T>();
   op->BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -257,23 +320,25 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo) {
           left_timShape[1] != right_timShape[1]) {
         auto lhs_tensor = GetEvaluatedTensorFor(rhs)[0];
         auto rhs_tensor = GetEvaluatedTensorFor(lhs)[0];
-        auto out_tensor =
-            createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+        auto out_tensor = CreateTensorFromShape(
+            shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                    : tim::vx::TensorAttribute::TRANSIENT);
         auto mul = graph_->CreateOperation<tim::vx::ops::Multiply>();
         mul->BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-        kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+        vsi_run_tensor_container_[hlo].push_back(out_tensor);
         break;
       }
 
       auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
       auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-      auto out_tensor =
-          createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+      auto out_tensor = CreateTensorFromShape(
+          shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                  : tim::vx::TensorAttribute::TRANSIENT);
       auto mul = graph_->CreateOperation<tim::vx::ops::Multiply>();
       mul->BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-      kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+      vsi_run_tensor_container_[hlo].push_back(out_tensor);
       break;
     }
     case HloOpcode::kDivide: {
@@ -284,8 +349,9 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo) {
 
       auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
       auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-      auto out_tensor =
-          createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+      auto out_tensor = CreateTensorFromShape(
+          shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                  : tim::vx::TensorAttribute::TRANSIENT);
       auto div = graph_->CreateOperation<tim::vx::ops::Div>();
       if (rhs_tensor->IsConstTensor() ||
           rhs_tensor->GetDataType() == tim::vx::DataType::INT32) {
@@ -315,7 +381,7 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo) {
       } else {
         div->BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
       }
-      kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+      vsi_run_tensor_container_[hlo].push_back(out_tensor);
       break;
     }
     case HloOpcode::kMaximum: {
@@ -324,6 +390,23 @@ Status BaseVisitor::HandleElementwiseBinary(HloInstruction* hlo) {
     }
     case HloOpcode::kMinimum: {
       HandleSimpleElementwiseBinary<tim::vx::ops::Minimum>(hlo);
+      break;
+    }
+    case HloOpcode::kPower: {
+      HandleSimpleElementwiseBinary<tim::vx::ops::Pow>(hlo);
+      break;
+    }
+    // case HloOpcode::kRemainder: {
+    //   return dovisitor->HandleElementwiseBinaryRemainder(
+    //       hlo, mutex_, vsi_run_tensor_container_, graph_);
+    //   break;
+    // }
+    case HloOpcode::kAnd: {
+      HandleSimpleElementwiseBinary<tim::vx::ops::LogicalAnd>(hlo);
+      break;
+    }
+    case HloOpcode::kOr: {
+      HandleSimpleElementwiseBinary<tim::vx::ops::LogicalOr>(hlo);
       break;
     }
     default:
@@ -345,8 +428,59 @@ Status BaseVisitor::Unimplemented(HloInstruction* inst) {
 Status BaseVisitor::HandleConvert(HloInstruction* hlo) {
   LOG(INFO) << "PROCESS " << __FUNCTION__;
   const HloInstruction* input = hlo->operand(0);
-  auto it = kVsiRunTensorContainer_.find(input);
-  kVsiRunTensorContainer_[hlo] = it->second;
+  auto shape = hlo->shape();
+  auto in_tensor = GetEvaluatedTensorFor(input)[0];
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+
+  auto op = graph_->CreateOperation<tim::vx::ops::Cast>();
+  (*op).BindInput(in_tensor).BindOutput(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
+  return Status::OK();
+}
+
+Status BaseVisitor::HandlePad(HloInstruction* hlo) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+
+  auto shape = hlo->shape();
+  auto* pad_hlo = Cast<HloPadInstruction>(hlo);
+
+  const HloInstruction* t = hlo->operand(0);  // t
+  const HloInstruction* padding_value =
+      pad_hlo->padding_value();  // padding_value
+  const PaddingConfig& padding_config = pad_hlo->padding_config();
+
+  auto t_tensor = GetEvaluatedTensorFor(t)[0];
+  auto padding_value_tensor = GetEvaluatedTensorFor(padding_value)[0];
+
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+
+  {
+    std::ostringstream ss;
+    auto dims = padding_config.dimensions();
+    for (int i = 0; i < dims.size(); i++) {
+      ss << dims[i].edge_padding_low() << " " << dims[i].edge_padding_high() << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " pad: " << ss.str();
+  }
+
+  std::vector<uint32_t> front;
+  std::vector<uint32_t> back;
+
+  auto pad_dims = padding_config.dimensions();
+  for (int i = 0; i < pad_dims.size(); i++) {
+    front.push_back(pad_dims[i].edge_padding_low());
+    back.push_back(pad_dims[i].edge_padding_high());
+  }
+
+  auto op = graph_->CreateOperation<tim::vx::ops::Pad>(
+      front, back, 0, tim::vx::ops::Pad::pad_mode_type::PAD_MODE_CONSTANT);
+
+  (*op).BindInput(t_tensor).BindOutput(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -359,7 +493,7 @@ Status BaseVisitor::HandleTuple(HloInstruction* hlo) {
   for (int64_t i = 0; i < input_num; i++) {
     const HloInstruction* input = hlo->operand(i);
     LOG(INFO) << "opcode : " << HloOpcodeString(input->opcode());
-    auto it = kVsiRunTensorContainer_.find(input);
+    auto it = vsi_run_tensor_container_.find(input);
     {
       std::ostringstream ss;
       auto shape = it->second[0]->GetSpec().shape_;
@@ -368,11 +502,11 @@ Status BaseVisitor::HandleTuple(HloInstruction* hlo) {
       }
       LOG(INFO) << __FUNCTION__ << " shape : " << ss.str();
     }
-    kVsiRunTensorContainer_[hlo].push_back(it->second[0]);
+    vsi_run_tensor_container_[hlo].push_back(it->second[0]);
   }
 
-  // auto it = kVsiRunTensorContainer_.find(input);
-  // kVsiRunTensorContainer_[hlo] = it->second;
+  // auto it = vsi_run_tensor_container_.find(input);
+  // vsi_run_tensor_container_[hlo] = it->second;
   return Status::OK();
 }
 
@@ -391,21 +525,21 @@ Status BaseVisitor::HandleGetTupleElement(HloInstruction* hlo) {
   LOG(INFO) << "PROCESS 1 " << __FUNCTION__;
   const HloInstruction* input = hlo->operand(0);
   LOG(INFO) << "PROCESS 2 " << __FUNCTION__;
-  auto it = kVsiRunTensorContainer_.find(input);
-  if (it == kVsiRunTensorContainer_.end()) {
+  auto it = vsi_run_tensor_container_.find(input);
+  if (it == vsi_run_tensor_container_.end()) {
     LOG(INFO) << "PROCESS FUCK ,can not find " << __FUNCTION__;
     return Status::OK();
   }
   LOG(INFO) << "PROCESS 3 " << __FUNCTION__;
 
-  kVsiRunTensorContainer_[hlo].push_back(it->second[index]);
+  vsi_run_tensor_container_[hlo].push_back(it->second[index]);
   LOG(INFO) << "PROCESS 4 " << __FUNCTION__;
 
   // auto shape = hlo->shape();
 
   // const HloInstruction* input = hlo->operand(tuple_hlo);
-  // auto it = kVsiRunTensorContainer_.find(input);
-  // kVsiRunTensorContainer_[hlo] = it->second;
+  // auto it = vsi_run_tensor_container_.find(input);
+  // vsi_run_tensor_container_[hlo] = it->second;
   return Status::OK();
 }
 
@@ -414,8 +548,8 @@ Status BaseVisitor::HandleCopy(HloInstruction* hlo) {
   auto shape = hlo->shape();
   const HloInstruction* input = hlo->operand(0);
 
-  auto it = kVsiRunTensorContainer_.find(input);
-  if (it == kVsiRunTensorContainer_.end()) {
+  auto it = vsi_run_tensor_container_.find(input);
+  if (it == vsi_run_tensor_container_.end()) {
     LOG(INFO) << "PROCESS FUCK ,can not find " << __FUNCTION__;
     return Status::OK();
   }
@@ -425,14 +559,14 @@ Status BaseVisitor::HandleCopy(HloInstruction* hlo) {
   // Just reserve some codes for debug usage.
 #if 0
     auto in_tensor = GetEvaluatedTensorFor(input);
-    auto out_tensor = createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    auto out_tensor = CreateTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
 
     auto convert = graph_->CreateOperation<tim::vx::ops::DataConvert>();
     convert->BindInput(in_tensor[0]).BindOutput(out_tensor);
 
-    kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    vsi_run_tensor_container_[hlo].push_back(out_tensor);
 #else
-  kVsiRunTensorContainer_[hlo].push_back(it->second[0]);
+  vsi_run_tensor_container_[hlo].push_back(it->second[0]);
 #endif
   // LOG(INFO) << "PROCESS 4 " << __FUNCTION__;
 
@@ -522,10 +656,11 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
           static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
     }
 
-    auto out_tensor =
-        createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    auto out_tensor = CreateTensorFromShape(
+        shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                : tim::vx::TensorAttribute::TRANSIENT);
     HandleReduceOpMap(opcode, input_tensor, out_tensor, axis);
-    kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    vsi_run_tensor_container_[hlo].push_back(out_tensor);
   } else {
     for (int64_t i = 0; i < input_num; i++) {
       const HloInstruction* input = reduce_hlo->operand(i);
@@ -555,10 +690,10 @@ Status BaseVisitor::HandleReduce(HloInstruction* hlo) {
         axis.push_back(
             static_cast<int32_t>(input_tensor_dimensions - 1 - dimensions[i]));
 
-        auto out_tensor = createTensorFromTupleShape(
+        auto out_tensor = CreateTensorFromTupleShape(
             shape, i, tim::vx::TensorAttribute::OUTPUT);
         HandleReduceOpMap(opcode, input_tensor, out_tensor, axis);
-        kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+        vsi_run_tensor_container_[hlo].push_back(out_tensor);
       }
     }
   }
@@ -584,6 +719,7 @@ Status BaseVisitor::HandleReduceWindow(HloInstruction* hlo) {
   auto shape = hlo->shape();
   auto* reduce_window_hlo = Cast<HloReduceWindowInstruction>(hlo);
   const auto& window = hlo->window();
+  const HloInstruction* input = hlo->operand(0);
 
   auto opcode = hlo->to_apply()->root_instruction()->opcode();
   LOG(INFO) << "HandleReduceWindow opcode: " << HloOpcodeString(opcode);
@@ -647,6 +783,22 @@ Status BaseVisitor::HandleReduceWindow(HloInstruction* hlo) {
     LOG(INFO) << __FUNCTION__ << " pad: " << ss.str();
   }
 
+  {
+    std::ostringstream ss;
+    auto dims = window.dimensions();
+    for (int i = 0; i < dims.size(); i++) {
+      ss << dims[i].size() << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " ksize: " << ss.str();
+  }
+
+  std::ostringstream ss;
+  auto input_minor_to_major = input->shape().layout().minor_to_major();
+  for (int i = 0; i < input_minor_to_major.size(); i++) {
+    ss << input_minor_to_major[i] << " ";
+  }
+  LOG(INFO) << __FUNCTION__ << " input_minor_to_major: " << ss.str();
+
   auto dims = window.dimensions();
   std::array<uint32_t, 2> ksize = {dims[2].size(), dims[1].size()};
   std::array<uint32_t, 2> stride = {dims[2].stride(), dims[1].stride()};
@@ -655,27 +807,42 @@ Status BaseVisitor::HandleReduceWindow(HloInstruction* hlo) {
   auto pool_type = GetPoolType(opcode);
 
   auto in_tensor = GetEvaluatedTensorFor(hlo->operand(0))[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
 
+  std::vector<uint32_t> in_perm;
+  std::vector<uint32_t> out_perm;
+  if (ss.str() == "3 2 1 0 ") {
+    in_perm = {1, 2, 0, 3};   // CWHN -> WHCN
+    out_perm = {2, 0, 1, 3};  // WHCN -> CWHN
+  } else if (ss.str() == "2 1 3 0 ") {
+    in_perm = {0, 1, 2, 3};   // WHCN -> WHCN
+    out_perm = {0, 1, 2, 3};  // WHCN -> WHCN
+  } else {
+    LOG(FATAL) << "PROCESS " << __FUNCTION__
+               << " Unsupported Layout:" << ss.str();
+  }
   auto in_tensor_spec = in_tensor->GetSpec();
-  auto in_tensor_shape = in_tensor_spec.shape_;
-  std::vector<uint32_t> in_perm = {1, 2, 0, 3};  // CWHN -> WHCN
+  auto in_tensor_shape = in_tensor_spec.GetShapeType();
+
   std::vector<uint32_t> in_tensor_tmp_shape = {
-      in_tensor_shape[1], in_tensor_shape[2], in_tensor_shape[0],
-      in_tensor_shape[3]};
-  tim::vx::TensorSpec in_tensor_tmp_sec(
-      in_tensor_spec.datatype_, in_tensor_tmp_shape, in_tensor_spec.attr_);
+      in_tensor_shape[in_perm[0]], in_tensor_shape[in_perm[1]],
+      in_tensor_shape[in_perm[2]], in_tensor_shape[in_perm[3]]};
+  tim::vx::TensorSpec in_tensor_tmp_sec(in_tensor_spec.GetDataType(),
+                                        in_tensor_tmp_shape,
+                                        tim::vx::TensorAttribute::TRANSIENT);
   auto in_tensor_tmp = graph_->CreateTensor(in_tensor_tmp_sec);
 
   auto out_tensor_spec = out_tensor->GetSpec();
-  auto out_tensor_shape = out_tensor_spec.shape_;
-  std::vector<uint32_t> out_perm = {2, 0, 1, 3};  // WHCN -> CWHN
+  auto out_tensor_shape = out_tensor_spec.GetShapeType();
+
   std::vector<uint32_t> out_tensor_tmp_shape = {
-      out_tensor_shape[1], out_tensor_shape[2], out_tensor_shape[0],
-      out_tensor_shape[3]};
-  tim::vx::TensorSpec out_tensor_tmp_sec(
-      out_tensor_spec.datatype_, out_tensor_tmp_shape, out_tensor_spec.attr_);
+      out_tensor_shape[in_perm[0]], out_tensor_shape[in_perm[1]],
+      out_tensor_shape[in_perm[2]], out_tensor_shape[in_perm[3]]};
+  tim::vx::TensorSpec out_tensor_tmp_sec(out_tensor_spec.GetDataType(),
+                                         out_tensor_tmp_shape,
+                                         tim::vx::TensorAttribute::TRANSIENT);
   auto out_tensor_tmp = graph_->CreateTensor(out_tensor_tmp_sec);
 
   auto in_transpose = graph_->CreateOperation<tim::vx::ops::Transpose>(in_perm);
@@ -689,7 +856,7 @@ Status BaseVisitor::HandleReduceWindow(HloInstruction* hlo) {
       graph_->CreateOperation<tim::vx::ops::Transpose>(out_perm);
   out_transpose->BindInput(out_tensor_tmp).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -717,7 +884,7 @@ Status BaseVisitor::HandleCompare(HloInstruction* hlo) {
   auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
   auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
   auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+      CreateTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
   switch (compare_hlo->direction()) {
     case ComparisonDirection::kEq:
       CreateCompareOp<tim::vx::ops::Equal>(lhs_tensor, rhs_tensor, out_tensor);
@@ -746,7 +913,7 @@ Status BaseVisitor::HandleCompare(HloInstruction* hlo) {
                                                (uint8)compare_hlo->direction());
   }
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -763,14 +930,14 @@ Status BaseVisitor::HandleSelect(HloInstruction* hlo) {
   auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
   auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
   auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+      CreateTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
   auto select = graph_->CreateOperation<tim::vx::ops::Select>();
   select->BindInput(condition_tensor)
       .BindInput(lhs_tensor)
       .BindInput(rhs_tensor)
       .BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -809,11 +976,13 @@ Status BaseVisitor::HandleBroadcast(HloInstruction* hlo) {
 #if 1
   auto shape = hlo->shape();
   auto in_tensor = GetEvaluatedTensorFor(input)[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
-  std::vector<int32_t> out_shape =
-      convert_array<std::vector<int32_t>>(shape.dimensions());
-  std::reverse(std::begin(out_shape), std::end(out_shape));
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+
+  std::vector<int32_t> out_shape(out_tensor->GetShape().begin(),
+                                 out_tensor->GetShape().end());
+
   std::vector<int32_t> dimensions;
   for (const auto& e : broadcast_hlo->dimensions()) {
     int32_t v = shape.dimensions().size() - 1 - e;
@@ -829,12 +998,205 @@ Status BaseVisitor::HandleBroadcast(HloInstruction* hlo) {
   auto op =
       graph_->CreateOperation<tim::vx::ops::Broadcast>(out_shape, dimensions);
   op->BindInput(in_tensor).BindOutput(out_tensor);
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
 #else
-  auto it = kVsiRunTensorContainer_.find(input);
-  kVsiRunTensorContainer_[hlo] = it->second;
+  auto it = vsi_run_tensor_container_.find(input);
+  vsi_run_tensor_container_[hlo] = it->second;
 #endif
 
+  return Status::OK();
+}
+
+Status BaseVisitor::HandleScatter(HloInstruction* hlo) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto shape = hlo->shape();
+  // hlo->operand(0) is zeros_like out_tensor
+  auto indices_tensor = GetEvaluatedTensorFor(hlo->operand(1))[0];
+  auto updates_tensor = GetEvaluatedTensorFor(hlo->operand(2))[0];
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+
+  {
+    std::ostringstream ss;
+    auto shape = indices_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " indices shape in TIM-VX: " << ss.str();
+  }
+
+  {
+    std::ostringstream ss;
+    auto shape = updates_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " updates shape in TIM-VX: " << ss.str();
+  }
+
+  {
+    std::ostringstream ss;
+    auto shape = out_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " output shape in TIM-VX: " << ss.str();
+  }
+
+  auto scatterOp =
+      graph_->CreateOperation<tim::vx::ops::ScatterND>(out_tensor->GetShape());
+
+  scatterOp->BindInputs({indices_tensor, updates_tensor})
+      .BindOutput(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
+  return Status::OK();
+}
+
+Status BaseVisitor::HandleSelectAndScatter(HloInstruction* hlo) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto shape = hlo->shape();
+  const auto& window = hlo->window();
+
+  if (shape.dimensions().size() != 4) {
+    return tensorflow::errors::Unimplemented("Only support pool2d.");
+  }
+
+  {
+    std::ostringstream ss;
+    auto dims = window.dimensions();
+    for (int i = 0; i < dims.size(); i++) {
+      ss << dims[i].size() << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " size: " << ss.str();
+  }
+
+  {
+    std::ostringstream ss;
+    auto dims = window.dimensions();
+    for (int i = 0; i < dims.size(); i++) {
+      ss << dims[i].stride() << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " stride: " << ss.str();
+  }
+
+  {
+    std::ostringstream ss;
+    auto dims = window.dimensions();
+    for (int i = 0; i < dims.size(); i++) {
+      ss << dims[i].padding_low() << " " << dims[i].padding_high() << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " pad: " << ss.str();
+  }
+
+  std::ostringstream ss;
+  auto LAYOUT = hlo->operand(0)->shape().layout().ToString();
+  LOG(INFO) << __FUNCTION__ << " LAYOUT: " << LAYOUT; 
+  auto input_minor_to_major = 
+      hlo->operand(0)->shape().layout().minor_to_major();
+  for (int i = 0; i < input_minor_to_major.size(); i++) {
+    ss << input_minor_to_major[i] << " ";
+  }
+  LOG(INFO) << __FUNCTION__ << " input_minor_to_major: " << ss.str(); 
+  std::vector<uint32_t> in_perm;
+  std::vector<uint32_t> out_perm;
+  std::array<uint32_t, 2> ksize;
+  std::array<uint32_t, 2> stride;
+  auto dims = window.dimensions();
+  if (ss.str() == "3 2 1 0 "){
+    in_perm = {1, 2, 0, 3};   // CWHN -> WHCN
+    out_perm = {2, 0, 1, 3};  // WHCN -> CWHN
+    ksize = {dims[2].size(), dims[1].size()};
+    stride = {dims[2].stride(), dims[1].stride()};
+    // in_perm = {2, 3, 1, 0};   // NCWH -> WHCN
+    // out_perm = {3, 2, 0, 1};  // WHCN -> NCWH
+    // ksize = {dims[1].size(), dims[0].size()};
+    // stride = {dims[1].stride(), dims[0].stride()};
+  }
+  // else if (ss.str() == "2 1 3 0 "){
+  //   in_perm = {0, 1, 2, 3};   // WHCN -> WHCN
+  //   out_perm = {0, 1, 2, 3};  // WHCN -> WHCN
+  //   ksize = {dims[1].size(), dims[0].size()};
+  //   stride = {dims[1].stride(), dims[0].stride()};
+  // }
+  else if (ss.str() == "0 3 2 1 "){
+    in_perm = {2, 3, 1, 0};   // WHCN -> WHCN
+    out_perm = {3, 2, 0, 1};  // WHCN -> WHCN
+    ksize = {dims[1].size(), dims[0].size()};
+    stride = {dims[1].stride(), dims[0].stride()};
+  }
+  else{
+    return tensorflow::errors::Unimplemented("Unsupported Layout");
+  }
+
+  tim::vx::PadType padtype;
+  if (window_util::HasPadding(window)) {
+    padtype = tim::vx::PadType::SAME;
+  } else {
+    padtype = tim::vx::PadType::VALID;
+  }
+
+  auto input_tensor = GetEvaluatedTensorFor(hlo->operand(0))[0];
+  auto gradient_tensor = GetEvaluatedTensorFor(hlo->operand(1))[0];
+  auto init_tensor = GetEvaluatedTensorFor(hlo->operand(2))[0];
+  auto output_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+
+  auto input_tensor_shape = input_tensor->GetShape();
+  std::vector<uint32_t> input_tensor_tmp_shape(in_perm.size());
+  for (uint32_t i = 0; i < in_perm.size(); i++) {
+    input_tensor_tmp_shape[i] = input_tensor_shape[in_perm[i]];
+  }
+  tim::vx::TensorSpec input_tensor_tmp_spec(
+      input_tensor->GetDataType(),
+      input_tensor_tmp_shape,
+      tim::vx::TensorAttribute::TRANSIENT);
+  auto input_tensor_tmp = graph_->CreateTensor(input_tensor_tmp_spec);
+
+  auto gradient_tensor_shape = gradient_tensor->GetShape();
+  std::vector<uint32_t> gradient_tensor_tmp_shape(in_perm.size());
+  for (uint32_t i = 0; i < in_perm.size(); i++) {
+    gradient_tensor_tmp_shape[i] = gradient_tensor_shape[in_perm[i]];
+  }
+  tim::vx::TensorSpec gradient_tensor_tmp_spec(
+      gradient_tensor->GetDataType(),
+      gradient_tensor_tmp_shape,
+      tim::vx::TensorAttribute::TRANSIENT);
+  auto gradient_tensor_tmp = graph_->CreateTensor(gradient_tensor_tmp_spec);
+
+  auto output_tensor_shape = output_tensor->GetShape();
+  std::vector<uint32_t> output_tensor_tmp_shape(out_perm.size());
+  for (uint32_t i = 0; i < out_perm.size(); i++) {
+    output_tensor_tmp_shape[i] = output_tensor_shape[out_perm[i]];
+  }
+  tim::vx::TensorSpec output_tensor_tmp_spec(
+      output_tensor->GetDataType(),
+      output_tensor_tmp_shape,
+      tim::vx::TensorAttribute::TRANSIENT);
+  auto output_tensor_tmp = graph_->CreateTensor(output_tensor_tmp_spec);
+  auto add_init_tensor_tmp = graph_->CreateTensor(output_tensor_tmp_spec);
+
+  auto in_transpose = graph_->CreateOperation<tim::vx::ops::Transpose>(in_perm);
+  in_transpose->BindInput(input_tensor).BindOutput(input_tensor_tmp);
+  auto source_transpose =
+      graph_->CreateOperation<tim::vx::ops::Transpose>(in_perm);
+  source_transpose->BindInput(gradient_tensor).BindOutput(gradient_tensor_tmp);
+
+  auto op = graph_->CreateOperation<tim::vx::ops::MaxpoolGrad>(padtype, ksize,
+                                                               stride);
+  op->BindInputs({input_tensor_tmp, gradient_tensor_tmp})
+     .BindOutputs({output_tensor_tmp});
+
+  auto add_init = graph_->CreateOperation<tim::vx::ops::Add>();
+  add_init->BindInputs({output_tensor_tmp, init_tensor})
+      .BindOutput(add_init_tensor_tmp);
+
+  auto out_transpose =
+      graph_->CreateOperation<tim::vx::ops::Transpose>(out_perm);
+  out_transpose->BindInput(add_init_tensor_tmp).BindOutput(output_tensor);
+
+  vsi_run_tensor_container_[hlo].push_back(output_tensor);
   return Status::OK();
 }
 
@@ -847,10 +1209,11 @@ Status BaseVisitor::HandleConcatenate(HloInstruction* hlo) {
             << concat_hlo->concatenate_dimension();
 
   if (hlo->operand_count() == 1) {
-    auto it = kVsiRunTensorContainer_.find(hlo->operand(0));
-    kVsiRunTensorContainer_[hlo] = it->second;
+    auto it = vsi_run_tensor_container_.find(hlo->operand(0));
+    vsi_run_tensor_container_[hlo] = it->second;
   } else {
-    uint32_t axis = concat_hlo->concatenate_dimension();
+    uint32_t axis =
+        shape.dimensions().size() - 1 - concat_hlo->concatenate_dimension();
     auto concat = graph_->CreateOperation<tim::vx::ops::Concat>(
         axis, hlo->operand_count());
     for (int i = 0; i < hlo->operand_count(); i++) {
@@ -858,10 +1221,11 @@ Status BaseVisitor::HandleConcatenate(HloInstruction* hlo) {
       auto input_tensor = GetEvaluatedTensorFor(input)[0];
       concat->BindInput(input_tensor);
     }
-    auto out_tensor =
-        createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+    auto out_tensor = CreateTensorFromShape(
+        shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                : tim::vx::TensorAttribute::TRANSIENT);
     concat->BindOutput(out_tensor);
-    kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    vsi_run_tensor_container_[hlo].push_back(out_tensor);
   }
 
   return Status::OK();
@@ -880,8 +1244,9 @@ Status BaseVisitor::HandleTranspose(HloInstruction* hlo) {
   CHECK_EQ(in_shape.rank(), out_shape.rank());
 
   auto in_tensor = GetEvaluatedTensorFor(input)[0];
-  auto out_tensor =
-      createTensorFromShape(out_shape, tim::vx::TensorAttribute::OUTPUT);
+  auto out_tensor = CreateTensorFromShape(
+      out_shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                  : tim::vx::TensorAttribute::TRANSIENT);
 
   std::vector<uint32_t> tmpdims;
   auto input_minor_to_major = input->shape().layout().minor_to_major();
@@ -902,7 +1267,7 @@ Status BaseVisitor::HandleTranspose(HloInstruction* hlo) {
   auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(dims);
   transposeOp->BindInput(in_tensor).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -919,8 +1284,9 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo) {
   CHECK_EQ(in_shape.rank(), out_shape.rank());
 
   auto in_tensor = GetEvaluatedTensorFor(input)[0];
-  auto out_tensor =
-      createTensorFromShape(out_shape, tim::vx::TensorAttribute::OUTPUT);
+  auto out_tensor = CreateTensorFromShape(
+      out_shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                  : tim::vx::TensorAttribute::TRANSIENT);
 
   std::vector<uint32_t> tmpdims;
   auto input_minor_to_major = input->shape().layout().minor_to_major();
@@ -1003,7 +1369,7 @@ Status BaseVisitor::HandleReverse(HloInstruction* hlo) {
   auto reverseOp = graph_->CreateOperation<tim::vx::ops::Reverse>(dims);
   reverseOp->BindInput(in_tensor).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -1012,15 +1378,177 @@ Status BaseVisitor::HandleReshape(HloInstruction* hlo) {
   auto shape = hlo->shape();
   const HloInstruction* input = hlo->operand(0);
   auto in_tensor = GetEvaluatedTensorFor(input)[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+  std::vector<uint32_t> dims;
+  // std::vector<uint32_t> dims =
+  //     convert_array<std::vector<uint32_t>>(shape.dimensions());
+  LOG(INFO) << __FUNCTION__ << " CCC: " << shape.dimensions().size();
 
-  std::vector<uint32_t> dims =
-      convert_array<std::vector<uint32_t>>(shape.dimensions());
+  if (shape.dimensions().size() != 0 && shape.dimensions(0) == 0) {
+    auto it = vsi_run_tensor_container_.find(input);
+    vsi_run_tensor_container_[hlo].push_back(it->second[0]);
+    return Status::OK();
+  }
+
+  // {
+  //   std::ostringstream ss;
+  //   auto minor_to_major = shape.layout().minor_to_major();
+  //   for (int i = 0; i < minor_to_major.size(); i++) {
+  //     ss << minor_to_major[i] << " ";
+  //   }
+  //   LOG(INFO) << __FUNCTION__ << " input_minor_to_major: " << ss.str();
+  // }
+
+  // {
+  //   std::ostringstream ss;
+  //   for (int i = 0; i < dims.size(); i++) {
+  //     ss << dims[i] << " ";
+  //   }
+  //   LOG(INFO) << __FUNCTION__ << " CCC dims0: " << ss.str();
+  // }
+
+  for (auto d : shape.layout().minor_to_major()) {
+    dims.push_back(shape.dimensions(d));
+  }
+
+  if (dims.size() == 0) {
+    dims.push_back(1);
+  }
+
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+
   auto reshapeOp = graph_->CreateOperation<tim::vx::ops::Reshape>(dims);
   reshapeOp->BindInput(in_tensor).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
+  return Status::OK();
+}
+
+Status BaseVisitor::HandleSlice(HloInstruction* hlo) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto shape = hlo->shape();
+  auto* slice_hlo = Cast<HloSliceInstruction>(hlo);
+  const HloInstruction* input = hlo->operand(0);
+  auto in_tensor = GetEvaluatedTensorFor(input)[0];
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+  {
+    std::ostringstream ss;
+    auto shape = in_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " input shape in TIM-VX: " << ss.str();
+  }
+
+  {
+    std::ostringstream ss;
+    auto shape = out_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " output shape in TIM-VX: " << ss.str();
+  }
+
+  {
+    std::ostringstream ss;
+    auto input_minor_to_major = input->shape().layout().minor_to_major();
+    for (int i = 0; i < input_minor_to_major.size(); i++) {
+      ss << input_minor_to_major[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " input_minor_to_major: " << ss.str();
+  }
+
+  std::vector<int32_t> start(slice_hlo->slice_starts().begin(),
+                             slice_hlo->slice_starts().end());
+  std::vector<int32_t> limits(slice_hlo->slice_limits().begin(),
+                              slice_hlo->slice_limits().end());
+  std::vector<int32_t> step(slice_hlo->slice_strides().begin(),
+                            slice_hlo->slice_strides().end());
+
+  std::vector<int32_t> length(start.size());
+  for (int i = 0; i < start.size(); i++) {
+    length[i] = ((limits[i] - start[i]) / step[i]);
+  }
+  std::reverse(start.begin(), start.end());
+  {
+    std::ostringstream ss;
+    for (int i = 0; i < start.size(); i++) {
+      ss << start[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " Reversed start: " << ss.str();
+  }
+
+  std::reverse(step.begin(), step.end());
+  {
+    std::ostringstream ss;
+    for (int i = 0; i < step.size(); i++) {
+      ss << step[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " Reversed step: " << ss.str();
+  }
+
+  std::reverse(length.begin(), length.end());
+  {
+    std::ostringstream ss;
+    for (int i = 0; i < length.size(); i++) {
+      ss << length[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " Reversed length: " << ss.str();
+  }
+
+  auto sliceOp =
+      graph_->CreateOperation<tim::vx::ops::Slice>(0, start, length, step);
+
+  sliceOp->BindInput(in_tensor).BindOutput(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
+  return Status::OK();
+}
+
+Status BaseVisitor::HandleGather(HloInstruction* hlo) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto shape = hlo->shape();
+  auto* gather_hlo = Cast<HloGatherInstruction>(hlo);
+  auto params_tensor = GetEvaluatedTensorFor(hlo->operand(0))[0];
+  auto indices_tensor = GetEvaluatedTensorFor(hlo->operand(1))[0];
+
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
+  {
+    std::ostringstream ss;
+    auto shape = params_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " params shape in TIM-VX: " << ss.str();
+  }
+  {
+    std::ostringstream ss;
+    auto shape = indices_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " indices shape in TIM-VX: " << ss.str();
+  }
+  {
+    std::ostringstream ss;
+    auto shape = out_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " output shape in TIM-VX: " << ss.str();
+  }
+
+  int axis = gather_hlo->gather_dimension_numbers().start_index_map()[0];
+  { LOG(INFO) << __FUNCTION__ << " hlo axis: " << axis; }
+  axis = params_tensor->GetShape().size() - 1 - axis;
+  { LOG(INFO) << __FUNCTION__ << " axis in TIM-VX: " << axis; }
+  auto gatherOp = graph_->CreateOperation<tim::vx::ops::Gather>(axis);
+  gatherOp->BindInputs({params_tensor, indices_tensor}).BindOutput(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -1029,24 +1557,52 @@ Status BaseVisitor::HandleIota(HloInstruction* hlo) {
   auto shape = hlo->shape();
   auto* iota_hlo = Cast<HloIotaInstruction>(hlo);
   int64_t iota_dimension = iota_hlo->iota_dimension();
+  { LOG(INFO) << __FUNCTION__ << " iota_dimension = " << iota_dimension; }
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
 
-  tim::vx::ShapeType timShape;
-  std::vector<float> tensor_data;
-  for (int64_t i = 0; i < iota_dimension; i++) {
-    if (shape.is_static() && shape.has_layout()) {
-      for (auto d : shape.layout().minor_to_major()) {
-        timShape.push_back(shape.dimensions(d));
-        tensor_data.push_back(static_cast<float>(d));
-      }
+  std::vector<int32_t> outShape(out_tensor->GetShape().begin(),
+                                out_tensor->GetShape().end());
+  {
+    std::ostringstream ss;
+    for (int i = 0; i < outShape.size(); i++) {
+      ss << outShape[i] << " ";
     }
+    LOG(INFO) << __FUNCTION__ << " output shape in TIM-VX: " << ss.str();
   }
+  // row-major to column-major
+  iota_dimension = outShape.size() - 1 - iota_dimension;
+  std::vector<int32_t> dims = {iota_dimension};
+  { LOG(INFO) << __FUNCTION__ << " dims in TIM-VX: " << iota_dimension; }
+  auto op = graph_->CreateOperation<tim::vx::ops::Broadcast>(outShape, dims);
+  if (shape.element_type() == S32) {
+    std::vector<int32_t> arrayData;
+    for (int i = 0; i < outShape[iota_dimension]; i++) {
+      arrayData.push_back(i);
+    }
+    tim::vx::ShapeType arrayShape = {arrayData.size()};
+    tim::vx::TensorSpec arraySpec(tim::vx::DataType::INT32, arrayShape,
+                                  tim::vx::TensorAttribute::INPUT);
+    auto array_tensor = graph_->CreateTensor(arraySpec, arrayData.data());
 
-  tim::vx::TensorSpec timSpec(tim::vx::DataType::FLOAT32, timShape,
-                              tim::vx::TensorAttribute::INPUT);
+    op->BindInput(array_tensor).BindOutput(out_tensor);
+  } else if (shape.element_type() == F32) {
+    std::vector<float> arrayData;
+    for (int i = 0; i < outShape[iota_dimension]; i++) {
+      arrayData.push_back(static_cast<float>(i));
+      }
+    tim::vx::ShapeType arrayShape = {arrayData.size()};
+    tim::vx::TensorSpec arraySpec(tim::vx::DataType::FLOAT32, arrayShape,
+                                  tim::vx::TensorAttribute::INPUT);
+  auto array_tensor = graph_->CreateTensor(arraySpec, arrayData.data());
 
-  auto out_tensor = graph_->CreateTensor(timSpec, tensor_data.data());
-
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+    op->BindInput(array_tensor).BindOutput(out_tensor);
+  } else {
+    LOG(FATAL) << "PROCESS " << __FUNCTION__ << " Unsupported Element Type:"
+               << static_cast<int>(shape.element_type());
+}
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -1060,8 +1616,9 @@ Status BaseVisitor::HandleDot(HloInstruction* hlo) {
 
   auto lhs_tensor = GetEvaluatedTensorFor(lhs)[0];
   auto rhs_tensor = GetEvaluatedTensorFor(rhs)[0];
-  auto out_tensor =
-      createTensorFromShape(shape, tim::vx::TensorAttribute::OUTPUT);
+  auto out_tensor = CreateTensorFromShape(
+      shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                              : tim::vx::TensorAttribute::TRANSIENT);
 
   {
     std::ostringstream ss;
@@ -1150,7 +1707,7 @@ Status BaseVisitor::HandleDot(HloInstruction* hlo) {
       transpose_a, transpose_b, false, false);
   matmul->BindInput(lhs_tensor).BindInput(rhs_tensor).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
 
@@ -1166,12 +1723,12 @@ Status BaseVisitor::HandleParameter(HloInstruction* hlo) {
       << ", but input literal shape is: "
       << ShapeUtil::HumanStringWithLayout(input_literal.shape());
 
-  if (kVsiRunTensorContainer_.find(hlo) == kVsiRunTensorContainer_.end()) {
+  if (vsi_run_tensor_container_.find(hlo) == vsi_run_tensor_container_.end()) {
     ShapeIndex shapeIndex({});
     void* buffer = input_literal.untyped_data(shapeIndex);
-    auto timTensor = createTensorFromShape(input_literal.shape());
+    auto timTensor = CreateTensorFromShape(input_literal.shape());
     timTensor->CopyDataToTensor(buffer);
-    kVsiRunTensorContainer_[hlo].push_back(timTensor);
+    vsi_run_tensor_container_[hlo].push_back(timTensor);
     kVsiInputId_[hlo->parameter_number()] = timTensor->GetId();
   }
   LOG(INFO) << "kVsiInputId_: " << kVsiInputId_.size();
@@ -1181,14 +1738,14 @@ Status BaseVisitor::HandleParameter(HloInstruction* hlo) {
 Status BaseVisitor::HandleConstant(HloInstruction* hlo) {
   LOG(INFO) << "PROCESS Constant";
 
-  if (kVsiRunTensorContainer_.find(hlo) == kVsiRunTensorContainer_.end()) {
+  if (vsi_run_tensor_container_.find(hlo) == vsi_run_tensor_container_.end()) {
     ShapeIndex shapeIndex({});
 
     auto& literal = hlo->literal();
     const void* buffer = literal.untyped_data(shapeIndex);
-    auto timTensor = createTensorFromShape(literal.shape());
+    auto timTensor = CreateTensorFromShape(literal.shape());
     timTensor->CopyDataToTensor(buffer);
-    kVsiRunTensorContainer_[hlo].push_back(timTensor);
+    vsi_run_tensor_container_[hlo].push_back(timTensor);
   }
 
   return Status::OK();
@@ -1255,24 +1812,7 @@ Status BaseVisitor::HandleConvolution(HloInstruction* hlo) {
       << "rhs_shape.dimensions()[dnums.kernel_output_feature_dimension()]: "
       << rhs_shape.dimensions()[dnums.kernel_output_feature_dimension()];
 
-  /*prepare input and weight: change layout to WHCN, layout minor to
-   * major:{0,1,2,3}*/
-  auto input = insertTranspose(lhs, input_dim);
-  auto weight = insertTranspose(rhs, weight_dim);
-
-  std::array<uint32_t, 2> ksize = {window.dimensions(1).size(),
-                                   window.dimensions(0).size()};
-  std::array<uint32_t, 2> stride = {window.dimensions(1).stride(),
-                                    window.dimensions(0).stride()};
-  std::array<uint32_t, 2> dilation = {window.dimensions(1).window_dilation(),
-                                      window.dimensions(0).window_dilation()};
-  std::array<uint32_t, 4> pad = {
-      window.dimensions(1).padding_low(), window.dimensions(1).padding_high(),
-      window.dimensions(0).padding_low(), window.dimensions(0).padding_high()};
-  auto convOp = graph_->CreateOperation<tim::vx::ops::Conv2d>(
-      rhs_shape.dimensions()[dnums.kernel_output_feature_dimension()],
-      tim::vx::PadType::AUTO, ksize, stride, dilation, pad);
-  {
+    {
     std::ostringstream ss;
     auto dims = lhs_shape.dimensions();
     for (int i = 0; i < dims.size(); i++) {
@@ -1317,13 +1857,136 @@ Status BaseVisitor::HandleConvolution(HloInstruction* hlo) {
     LOG(INFO) << __FUNCTION__ << " base_dilation: " << ss.str();
   }
 
+/*prepare input and weight: change layout to WHCN, layout minor to
+   * major:{0,1,2,3}*/
+  auto input = InsertTranspose(lhs, input_dim);
+  auto weight = InsertTranspose(rhs, weight_dim);
+
+  std::array<uint32_t, 2> ksize = {window.dimensions(1).size(),
+                                   window.dimensions(0).size()};
+
+  std::array<int32_t, 4> xla_pad = {
+      window.dimensions(1).padding_low(),
+      window.dimensions(1).padding_high(),  // top bottom
+      window.dimensions(0).padding_low(),
+      window.dimensions(0).padding_high()};  // left, right
+
   {
     std::ostringstream ss;
-    auto dims = window.dimensions();
-    for (int i = 0; i < dims.size(); i++) {
-      ss << dims[i].padding_low() << " " << dims[i].padding_high() << " ";
+    for (int i = 0; i < xla_pad.size(); i++) {
+      ss << xla_pad[i] << " ";
     }
-    LOG(INFO) << __FUNCTION__ << " pad: " << ss.str();
+    LOG(INFO) << __FUNCTION__ << " xla_pad: " << ss.str();
+  }
+
+  std::shared_ptr<tim::vx::Operation> convOp;
+  bool need_slice = false;
+
+  // conv2d don't support base dilation
+  if (window.dimensions(1).base_dilation() != 1 or
+      window.dimensions(0).base_dilation() != 1) {
+    // forward stride equal to backward base dilation
+    std::array<uint32_t, 2> forward_stride = {
+        window.dimensions(1).base_dilation(),
+        window.dimensions(0).base_dilation()};
+    std::array<uint32_t, 2> output_padding = {0, 0};
+    std::array<uint32_t, 4> forward_pad = {0, 0, 0, 0};
+    for (int i = 0, j = 0; i < 4; i++) {
+      int real_forward_pad = ksize[i % 2] - xla_pad[i] - 1;
+      if (real_forward_pad < 0) {
+        // DeConv2d parameter pad not support negative pad,
+        // so we implement it by do output padding.
+        output_padding[j++] = - real_forward_pad;
+      } else {
+        forward_pad[i] = real_forward_pad;
+      }
+    }
+    // deconv2d need the params in forword, but not backword
+    convOp = graph_->CreateOperation<tim::vx::ops::DeConv2d>(
+        rhs_shape.dimensions()[dnums.kernel_output_feature_dimension()],
+        tim::vx::PadType::AUTO, ksize, forward_stride, output_padding,
+        forward_pad);
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < ksize.size(); i++) {
+      ss << ksize[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " DeConv2d param ksize: " << ss.str();
+    }
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < forward_stride.size(); i++) {
+        ss << forward_stride[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " DeConv2d param forward_stride: " << ss.str();
+    }
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < output_padding.size(); i++) {
+        ss << output_padding[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " DeConv2d param output_padding: " << ss.str();
+    }
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < forward_pad.size(); i++) {
+        ss << forward_pad[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " DeConv2d param forward_pad: " << ss.str();
+    }
+    // Deconv2d will reverse the weight, but the weight already reversed.
+    // So we must reverse the weight again.
+    std::vector<int32_t> dims = {1, 0};
+    auto reverseOp = graph_->CreateOperation<tim::vx::ops::Reverse>(dims);
+    auto weight_spec = weight->GetSpec();
+    auto weight_tmp = graph_->CreateTensor(weight_spec);
+    reverseOp->BindInput(weight).BindOutput(weight_tmp);
+    weight = weight_tmp;
+  } else {
+    std::array<uint32_t, 2> stride = {window.dimensions(1).stride(),
+                                      window.dimensions(0).stride()};
+    std::array<uint32_t, 2> dilation = {window.dimensions(1).window_dilation(),
+                                        window.dimensions(0).window_dilation()};
+    std::array<uint32_t, 4> conv_pad = {0, 0, 0, 0};
+    for (int i = 0; i < 4; i++) {
+      if (xla_pad[i] < 0) {
+        need_slice = true;
+      } else {
+        conv_pad[i] = (uint32_t)(xla_pad[i]);
+      }
+    }
+
+    convOp = graph_->CreateOperation<tim::vx::ops::Conv2d>(
+        rhs_shape.dimensions()[dnums.kernel_output_feature_dimension()],
+        tim::vx::PadType::AUTO, ksize, stride, dilation, conv_pad);
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < ksize.size(); i++) {
+        ss << ksize[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " Conv2d param ksize: " << ss.str();
+}
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < stride.size(); i++) {
+        ss << stride[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " Conv2d param stride: " << ss.str();
+    }
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < dilation.size(); i++) {
+        ss << dilation[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " Conv2d param dilation: " << ss.str();
+    }
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < conv_pad.size(); i++) {
+        ss << conv_pad[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " Conv2d param conv_pad: " << ss.str();
+    }
   }
 
   LOG(INFO) << __FUNCTION__
@@ -1332,10 +1995,11 @@ Status BaseVisitor::HandleConvolution(HloInstruction* hlo) {
 
   std::vector<uint32_t> perm;
 
-  auto out_tensor =
-      createTensorFromShape(hlo->shape(), tim::vx::TensorAttribute::OUTPUT);
+  auto out_tensor = CreateTensorFromShape(
+      hlo->shape(), IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
+                                     : tim::vx::TensorAttribute::TRANSIENT);
   auto out_tensor_spec = out_tensor->GetSpec();
-  auto out_tensor_shape = out_tensor_spec.shape_;
+  auto out_tensor_shape = out_tensor_spec.GetShapeType();
   std::vector<uint32_t> out_tensor_tmp_shape;
   // In HloConvolution:
   // lhs layout is [batch, z/depth/features, spatial_dims], also known as NCHW.
@@ -1373,17 +2037,225 @@ Status BaseVisitor::HandleConvolution(HloInstruction* hlo) {
     LOG(INFO) << __FUNCTION__ << " Other Conv X";
   }
 
-  tim::vx::TensorSpec out_tensor_tmp_sec(
-      out_tensor_spec.datatype_, out_tensor_tmp_shape, out_tensor_spec.attr_);
+  {
+    std::ostringstream ss;
+    for (int i = 0; i < out_tensor_tmp_shape.size(); i++) {
+      ss << out_tensor_tmp_shape[i] << ", ";
+    }
+    LOG(INFO) << __FUNCTION__ << " out_tensor_tmp_shape: " << ss.str();
+  }
+  tim::vx::TensorSpec out_tensor_tmp_sec(out_tensor_spec.GetDataType(),
+                                         out_tensor_tmp_shape,
+                                         tim::vx::TensorAttribute::TRANSIENT);
   auto out_tensor_tmp = graph_->CreateTensor(out_tensor_tmp_sec);
 
+if (need_slice) {
+    // Conv2d do not support negative pad, negative pad is equivalent to slice.
+    auto input_shape = input->GetShape();        // WHCN
+    std::vector<int32_t> start = {0, 0, 0, 0};   // whcn
+    std::vector<int32_t> length = {0, 0, 0, 0};  // whcn
+    start[0] = abs(xla_pad[0]);                            // top
+    start[1] = abs(xla_pad[2]);                            // left
+    length[0] = input_shape[0] + xla_pad[0] + xla_pad[1];  // w + left + right
+    length[1] = input_shape[1] + xla_pad[2] + xla_pad[3];  // h + top + bottom
+    length[2] = input_shape[2];                            // c
+    length[3] = input_shape[3];                            // n
+
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < 4; i++) {
+        ss << start[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " slice start: " << ss.str();
+    }
+
+    {
+      std::ostringstream ss;
+      for (int i = 0; i < 4; i++) {
+        ss << length[i] << " ";
+      }
+      LOG(INFO) << __FUNCTION__ << " slice length: " << ss.str();
+    }
+
+    auto sliceOp = graph_->CreateOperation<tim::vx::ops::Slice>(0, start, length);
+
+    std::vector<uint32_t> slice_shape = {
+        (uint32_t)(length[3]), (uint32_t)(length[2]), (uint32_t)(length[1]),
+        (uint32_t)(length[0])};  // nchw
+
+    tim::vx::TensorSpec slice_tensor_spec(out_tensor_spec.GetDataType(),
+                                          slice_shape,
+                                          tim::vx::TensorAttribute::TRANSIENT);
+
+    auto slice_tensor = graph_->CreateTensor(slice_tensor_spec);
+
+    sliceOp->BindInput(input).BindOutput(slice_tensor);
+    convOp->BindInput(slice_tensor)
+        .BindInput(weight)
+        .BindOutput(out_tensor_tmp);
+
+  } else {
   convOp->BindInput(input).BindInput(weight).BindOutput(out_tensor_tmp);
+}
 
   auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(perm);
   transposeOp->BindInput(out_tensor_tmp).BindOutput(out_tensor);
 
-  kVsiRunTensorContainer_[hlo].push_back(out_tensor);
+  vsi_run_tensor_container_[hlo].push_back(out_tensor);
   return Status::OK();
 }
+
+#if 1
+Status BaseVisitor::CustomCallLogSoftmax(HloInstruction* inst,
+                                         BaseVisitor* bv) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto in_tensor = bv->GetEvaluatedTensorFor(inst->operand(0))[0];
+  auto shape = inst->shape();
+  auto out_tensor = bv->CreateTensorFromShape(
+      shape, IsRootHlo(inst) ? tim::vx::TensorAttribute::OUTPUT
+                               : tim::vx::TensorAttribute::TRANSIENT);
+  std::string paramters = Cast<HloCustomCallInstruction>(inst)->opaque();
+
+  auto op = bv->graph_->CreateOperation<tim::vx::ops::LogSoftmax>(0);
+
+  op->BindInput(in_tensor).BindOutput(out_tensor);
+
+  bv->vsi_run_tensor_container_[inst].push_back(out_tensor);
+  return Status::OK();
+}
+
+Status BaseVisitor::CustomCallTopK(HloInstruction* inst, BaseVisitor* bv) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto in_tensor = bv->GetEvaluatedTensorFor(inst->operand(0))[0];
+  auto tuple_shape = inst->shape();
+  auto value_shape = *(tuple_shape.mutable_tuple_shapes(0));
+  auto indices_shape = *(tuple_shape.mutable_tuple_shapes(1));
+
+  auto value_tensor = bv->CreateTensorFromShape(
+      value_shape, IsRootHlo(inst) ? tim::vx::TensorAttribute::OUTPUT
+                                     : tim::vx::TensorAttribute::TRANSIENT);
+  auto indices_tensor = bv->CreateTensorFromShape(
+      indices_shape, IsRootHlo(inst) ? tim::vx::TensorAttribute::OUTPUT
+                                       : tim::vx::TensorAttribute::TRANSIENT);
+
+  xla::vsiplugin::AttributeMap attribute_map(
+      Cast<HloCustomCallInstruction>(inst)->opaque());
+  int32_t k = *(attribute_map.GetAttributeAsInt("k"));
+
+  auto op = bv->graph_->CreateOperation<tim::vx::ops::Topk>(k);
+
+  op->BindInput(in_tensor).BindOutputs({value_tensor, indices_tensor});
+
+  bv->vsi_run_tensor_container_[inst].push_back(value_tensor);
+  bv->vsi_run_tensor_container_[inst].push_back(indices_tensor);
+  return Status::OK();
+}
+
+/* static */ Status BaseVisitor::CustomCallSqueeze(HloInstruction* inst,
+                                                   BaseVisitor* bv) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+  auto in_tensor = bv->GetEvaluatedTensorFor(inst->operand(0))[0];
+  auto shape = inst->shape();
+  auto out_tensor = bv->CreateTensorFromShape(
+      shape, IsRootHlo(inst) ? tim::vx::TensorAttribute::OUTPUT
+                               : tim::vx::TensorAttribute::TRANSIENT);
+  {
+    std::ostringstream ss;
+    auto shape = in_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " input shape in TIM-VX: " << ss.str();
+  }
+  {
+    std::ostringstream ss;
+    auto shape = out_tensor->GetShape();
+    for (int i = 0; i < shape.size(); i++) {
+      ss << shape[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " output shape in TIM-VX: " << ss.str();
+  }
+  xla::vsiplugin::AttributeMap attribute_map(
+      Cast<HloCustomCallInstruction>(inst)->opaque());
+
+  auto axis_ =
+      attribute_map.GetAttributeInt64Vector("squeeze_dims").ValueOrDie();
+  std::vector<uint32_t> axis;
+  int dims = in_tensor->GetShape().size();
+  for (auto it = axis_.rbegin(); it != axis_.rend(); it++) {
+    axis.push_back(dims - 1 - *it);
+  }
+
+  {
+    std::ostringstream ss;
+    for (int i = 0; i < axis.size(); i++) {
+      ss << axis[i] << " ";
+    }
+    LOG(INFO) << __FUNCTION__ << " axis in TIM-VX: " << ss.str();
+  }
+  auto op = bv->graph_->CreateOperation<tim::vx::ops::Squeeze>(axis);
+  op->BindInput(in_tensor).BindOutput(out_tensor);
+  bv->vsi_run_tensor_container_[inst].push_back(out_tensor);
+  return Status::OK();
+}
+
+// Status BaseVisitor::CustomCallSoftmax(HloInstruction* inst,
+//                                          BaseVisitor* bv) {
+//   LOG(INFO) << "PROCESS " << __FUNCTION__;
+//   LOG(INFO) << "PROTO " << inst->ToString();
+//   auto in_tensor = bv->GetEvaluatedTensorFor(inst->operand(0))[0];
+//   auto shape = inst->shape();
+//   auto out_tensor = bv->CreateTensorFromShape(
+//       shape, IsRootHlo(inst) ? tim::vx::TensorAttribute::OUTPUT
+//                                : tim::vx::TensorAttribute::TRANSIENT);
+//   std::vector<std::shared_ptr<tim::vx::Tensor>> in_tensors;
+//   std::vector<std::shared_ptr<tim::vx::Tensor>> out_tensors;
+//   in_tensors.push_back(in_tensor);
+//   out_tensors.push_back(out_tensor);
+//   auto status = DoVisitor::CustomCallSoftmax(
+//       inst, in_tensors, out_tensors,
+//       bv->vsi_run_tensor_container_, bv->graph_);
+//   return status;
+// }
+
+// Status BaseVisitor::CustomCallArgMax(HloInstruction* inst,
+//                                          BaseVisitor* bv) {
+//   LOG(INFO) << "PROCESS " << __FUNCTION__;
+//   LOG(INFO) << "PROTO " << inst->ToString();
+//   auto in_tensor = bv->GetEvaluatedTensorFor(inst->operand(0))[0];
+//   auto shape = inst->shape();
+//   auto out_tensor = bv->CreateTensorFromShape(
+//       shape, IsRootHlo(inst) ? tim::vx::TensorAttribute::OUTPUT
+//                                : tim::vx::TensorAttribute::TRANSIENT);
+
+//   xla::vsiplugin::AttributeMap attribute_map(
+//       Cast<HloCustomCallInstruction>(inst)->opaque());
+//   int32_t dim = *(attribute_map.GetAttributeAsInt("dimension"));
+//   std::vector<std::shared_ptr<tim::vx::Tensor>> in_tensors;
+//   std::vector<std::shared_ptr<tim::vx::Tensor>> out_tensors;
+//   in_tensors.push_back(in_tensor);
+//   out_tensors.push_back(out_tensor);
+//   auto status = DoVisitor::CustomCallArgmax(
+//       inst, in_tensors, out_tensors, dim,
+//       bv->vsi_run_tensor_container_, bv->graph_);
+//   return status;
+// }
+
+Status BaseVisitor::HandleCustomCall(HloInstruction* inst) {
+  LOG(INFO) << "PROCESS " << __FUNCTION__;
+
+  auto* cc_hlo = Cast<HloCustomCallInstruction>(inst);
+  auto cc_name = cc_hlo->custom_call_target();
+
+  std::string attr = cc_hlo->opaque();
+  LOG(INFO) << __FUNCTION__ << "Serialised attrs are: " << attr;
+
+  if (custom_call_map_.count(cc_name)) {
+    return custom_call_map_[cc_name](inst, this);
+  }
+  LOG(FATAL) << "no target for custom call: " << cc_name;
+  return Status::OK();
+}
+#endif
 }  // namespace vsiplugin
 }  // namespace xla

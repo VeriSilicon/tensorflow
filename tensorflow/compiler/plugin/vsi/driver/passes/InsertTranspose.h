@@ -35,7 +35,7 @@ private:
     StatusOr<bool> InsertTransposeForConv(HloInstruction *conv);
     HloInstruction* repalceConvWithNew(HloInstruction *oldCconv,
                     HloInstruction *input, HloInstruction *weight);
-    HloInstruction* insertTransposeforHlo(HloInstruction *hlo, std::vector<int64_t> &dim_index);
+    HloInstruction* InsertTransposeforHlo(HloInstruction *hlo, std::vector<int64_t> &dim_index);
 };
 
 }  // namespace vsiplugin

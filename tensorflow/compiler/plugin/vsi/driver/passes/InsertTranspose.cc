@@ -88,8 +88,8 @@ StatusOr<bool> InsertTranspose::InsertTransposeForConv(HloInstruction *conv){
         weight_dim.push_back(dnums.kernel_spatial_dimensions(i - 2));
     }
 
-    auto input_instr = insertTransposeforHlo(conv->mutable_operand(0), input_dim);
-    auto weight_instr = insertTransposeforHlo(conv->mutable_operand(1), weight_dim);
+    auto input_instr = InsertTransposeforHlo(conv->mutable_operand(0), input_dim);
+    auto weight_instr = InsertTransposeforHlo(conv->mutable_operand(1), weight_dim);
     auto newConv = repalceConvWithNew(conv, input_instr, weight_instr);
 
     return newConv != nullptr;
@@ -98,7 +98,7 @@ StatusOr<bool> InsertTranspose::InsertTransposeForConv(HloInstruction *conv){
 HloInstruction* InsertTranspose::repalceConvWithNew(HloInstruction *oldConv,
                     HloInstruction *input, HloInstruction *weight){
     ConvolutionDimensionNumbers dim_numbers = oldConv->convolution_dimension_numbers();
-    /*the layout of the new instruction created by insertTransposeforHlo, is:
+    /*the layout of the new instruction created by InsertTransposeforHlo, is:
     ** input:  {N C H W ....}
     ** weight: {O I H W ...}*/
 
@@ -142,7 +142,7 @@ HloInstruction* InsertTranspose::repalceConvWithNew(HloInstruction *oldConv,
     return nullptr;
 }
 
-HloInstruction* InsertTranspose::insertTransposeforHlo(HloInstruction *hlo, std::vector<int64_t> &dim_index){
+HloInstruction* InsertTranspose::InsertTransposeforHlo(HloInstruction *hlo, std::vector<int64_t> &dim_index){
     CHECK_EQ(hlo->shape().dimensions().size(), dim_index.size());
     std::vector<int64_t> new_output_dimensions;
     for(auto d : dim_index){
@@ -181,7 +181,7 @@ HloInstruction* InsertTranspose::insertTransposeforHlo(HloInstruction *hlo, std:
     //     for(auto d : perm){
     //         output_shape.push_back(input_shape[d]);
     //     }
-    //     auto output_tensor = createTensorFromShape(
+    //     auto output_tensor = CreateTensorFromShape(
     //         convertTfPrimitiveTypeToTim(hlo->shape().element_type()), output_shape,
     //         tim::vx::TensorAttribute::OUTPUT);
     //     auto transposeOp = graph_->CreateOperation<tim::vx::ops::Transpose>(perm);

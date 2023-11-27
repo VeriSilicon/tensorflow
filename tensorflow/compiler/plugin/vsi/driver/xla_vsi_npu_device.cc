@@ -25,11 +25,9 @@ limitations under the License.
 
 #include "tensorflow/core/framework/kernel_def.pb.h"
 #include "tensorflow/core/kernels/no_op.h"
+#include "tensorflow/compiler/plugin/vsi/driver/xla_vsi_common.h"
 
 namespace tensorflow {
-const char* const DEVICE_XLA_VSI_NPU = "NPU";
-const char* const DEVICE_VSI_NPU_XLA_JIT = "XLA_NPU_JIT";
-const char* const PLATFORM_NAME = "vsi-npu";
 
 std::vector<DataType> GetVsiNpuSupportedTypes() {
   // Supress the unused warning.
