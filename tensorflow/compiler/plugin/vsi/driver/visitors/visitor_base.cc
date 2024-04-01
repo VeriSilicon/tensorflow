@@ -980,7 +980,7 @@ Status BaseVisitor::HandleBroadcast(HloInstruction* hlo) {
       shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
                               : tim::vx::TensorAttribute::TRANSIENT);
 
-  std::vector<int32_t> out_shape(out_tensor->GetShape().begin(),
+  std::vector<uint32_t> out_shape(out_tensor->GetShape().begin(),
                                  out_tensor->GetShape().end());
 
   std::vector<int32_t> dimensions;
@@ -1562,7 +1562,7 @@ Status BaseVisitor::HandleIota(HloInstruction* hlo) {
       shape, IsRootHlo(hlo) ? tim::vx::TensorAttribute::OUTPUT
                               : tim::vx::TensorAttribute::TRANSIENT);
 
-  std::vector<int32_t> outShape(out_tensor->GetShape().begin(),
+  std::vector<uint32_t> outShape(out_tensor->GetShape().begin(),
                                 out_tensor->GetShape().end());
   {
     std::ostringstream ss;
